@@ -41,7 +41,7 @@ npm view react-acp dist-tags.latest
 - Environment：留空
 - Allowed action：`npm publish`
 
-确认一次 OIDC 自动发布成功后，将 Publishing access 设置为“Require two-factor authentication and disallow tokens”，并撤销不再使用的 automation token。仓库不保存 `NPM_TOKEN`。
+保存 Trusted Publisher 后，将 Publishing access 设置为“Require two-factor authentication and disallow tokens”，并撤销不再使用的 automation token。仓库不保存 `NPM_TOKEN`。
 
 最后创建并推送首版 tag；workflow 会验证已存在的 npm 版本并创建 GitHub Release：
 
