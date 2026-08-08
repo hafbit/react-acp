@@ -22,7 +22,7 @@ pnpm install --frozen-lockfile
 pnpm check
 pnpm release:pack
 npm login
-npm publish release-artifacts/react-acp-0.1.0.tgz --access public --tag latest
+npm publish ./release-artifacts/react-acp-0.1.0.tgz --access public --tag latest
 ```
 
 `npm login` 和首次 publish 必须由包所有者完成 2FA。发布后先验证：
