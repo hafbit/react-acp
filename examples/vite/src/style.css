@@ -1,0 +1,13 @@
+:root { font-family: system-ui, sans-serif; color: #18212f; background: #f4f6f8; }
+body { margin: 0; }
+main { display: grid; grid-template-columns: 14rem 1fr; min-height: 100vh; }
+aside { display: flex; flex-direction: column; gap: .5rem; padding: 1rem; background: #18212f; }
+aside button { padding: .65rem; text-align: left; }
+aside button[data-active="true"] { outline: 2px solid #5eead4; }
+section { padding: 1.5rem; max-width: 60rem; }
+header { display: flex; gap: 1rem; align-items: center; flex-wrap: wrap; }
+article { margin: 1rem 0; padding: 1rem; border-radius: .75rem; background: white; }
+article[data-role="user"] { background: #dff7f2; }
+pre { white-space: pre-wrap; word-break: break-word; }
+form { display: flex; gap: .5rem; position: sticky; bottom: 1rem; }
+textarea { flex: 1; min-height: 4rem; }

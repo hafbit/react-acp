@@ -1,0 +1,159 @@
+"use client";
+
+import {
+  pickExternalStoreSharedOptions,
+  useExternalStoreRuntime,
+  type AppendMessage,
+  type AssistantRuntime,
+  type RespondToToolApprovalOptions,
+  type ThreadMessage,
+} from "@assistant-ui/react";
+import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { acpExtras } from "./acp-extras";
+import {
+  AcpCapabilityError,
+  AcpThreadController,
+  hasAgentCapability,
+  projectAcpThreadRepository,
+  type AcpRuntimeExtras,
+  type AcpRuntimeOptions,
+} from "./core";
+
+const useControllerState = (controller: AcpThreadController) =>
+  useSyncExternalStore(
+    controller.subscribe,
+    controller.getState,
+    controller.getState,
+  );
+
+const choosePermissionOption = (
+  extras: AcpRuntimeExtras,
+  response: RespondToToolApprovalOptions,
+) => {
+  if (response.optionId) return response.optionId;
+  const session = extras.session;
+  const request = session?.permissions[response.approvalId]?.request;
+  const prefix = response.approved ? "allow" : "reject";
+  return request?.options.find((option) => option.kind.startsWith(prefix))
+    ?.optionId;
+};
+
+export function useAcpRuntime(options: AcpRuntimeOptions): AssistantRuntime {
+  const [controller] = useState(() => new AcpThreadController(options));
+  const state = useControllerState(controller);
+
+  useEffect(() => {
+    void controller.connect().catch(() => {});
+    return () => controller.disconnect();
+  }, [controller]);
+
+  useEffect(() => {
+    if (
+      options.threadId &&
+      state.connectionStatus === "ready" &&
+      state.activeSessionId !== options.threadId
+    ) {
+      void controller.selectSession(options.threadId).catch(options.onError);
+    }
+  }, [controller, options.threadId, options.onError, state.connectionStatus, state.activeSessionId]);
+
+  const session = state.activeSessionId
+    ? state.sessions[state.activeSessionId]
+    : undefined;
+  const extras = useMemo<AcpRuntimeExtras>(
+    () => ({
+      state,
+      session,
+      reconnect: () => controller.reconnect(),
+      authenticate: (methodId) => controller.authenticate(methodId),
+      logout: () => controller.logout(),
+      selectSession: (sessionId) => controller.selectSession(sessionId),
+      createSession: () => controller.createSession(),
+      deleteSession: (sessionId) => controller.deleteSession(sessionId),
+      resumeSession: (sessionId) => controller.resumeSession(sessionId),
+      closeSession: (sessionId) => controller.closeSession(sessionId),
+      setMode: async (modeId) => {
+        if (!state.activeSessionId) {
+          throw new AcpCapabilityError("active session");
+        }
+        await controller.setMode(state.activeSessionId, modeId);
+      },
+      setConfigOption: async (configId, value) => {
+        if (!state.activeSessionId) {
+          throw new AcpCapabilityError("active session");
+        }
+        await controller.setConfigOption(state.activeSessionId, configId, value);
+      },
+      replyToPermission: async (toolCallId, optionId) => {
+        if (!state.activeSessionId) return;
+        await controller.replyToPermission(
+          state.activeSessionId,
+          toolCallId,
+          optionId,
+        );
+      },
+    }),
+    [controller, session, state],
+  );
+
+  const messageRepository = useMemo(
+    () => projectAcpThreadRepository(state),
+    [state],
+  );
+
+  const threadList = useMemo(
+    () => ({
+      threadId: state.activeSessionId,
+      threads: state.sessionOrder.map((sessionId) => {
+        const item = state.sessions[sessionId];
+        return {
+          id: sessionId,
+          remoteId: sessionId,
+          externalId: sessionId,
+          status: "regular" as const,
+          title: item?.info?.title ?? sessionId,
+          custom: { acp: item?.info },
+        };
+      }),
+      onSwitchToNewThread: async () => {
+        await controller.createSession();
+      },
+      onSwitchToThread: (sessionId: string) =>
+        controller.selectSession(sessionId),
+      ...(hasAgentCapability(state.capabilities, "delete")
+        ? { onDelete: (sessionId: string) => controller.deleteSession(sessionId) }
+        : {}),
+    }),
+    [controller, state],
+  );
+
+  return useExternalStoreRuntime<ThreadMessage>({
+    ...pickExternalStoreSharedOptions(options),
+    isLoading:
+      state.connectionStatus === "connecting" || session?.runState === "loading",
+    isDisabled:
+      state.connectionStatus === "auth-required" ||
+      state.connectionStatus === "error" ||
+      state.connectionStatus === "closed",
+    isSendDisabled:
+      state.connectionStatus !== "ready" ||
+      session?.runState === "running" ||
+      session?.runState === "cancelling",
+    isRunning:
+      session?.runState === "running" || session?.runState === "cancelling",
+    messageRepository,
+    extras: acpExtras.provide(extras),
+    adapters: {
+      ...options.adapters,
+      threadList,
+    },
+    onNew: (message: AppendMessage) => controller.sendMessage(message),
+    onCancel: async () => {
+      if (state.activeSessionId) await controller.cancel(state.activeSessionId);
+    },
+    onRespondToToolApproval: async (response) => {
+      const optionId = choosePermissionOption(extras, response);
+      await extras.replyToPermission(response.approvalId, optionId);
+    },
+  });
+}

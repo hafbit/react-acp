@@ -1,0 +1,10 @@
+*.tsbuildinfo
+.DS_Store
+.pnpm-store/
+coverage/
+dist/
+examples/vite/dist/
+node_modules/
+playwright-report/
+test-results/
+release-artifacts/

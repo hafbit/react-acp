@@ -1,0 +1,153 @@
+name: Publish react-acp
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+  id-token: write
+
+concurrency:
+  group: npm-publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout release tag
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+
+      - name: Fetch protected release branch
+        run: git fetch --no-tags origin latest:refs/remotes/origin/latest
+
+      - name: Enable pnpm
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6
+        with:
+          version: 10.15.1
+
+      - name: Set up Node.js and npm registry
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 24
+          cache: pnpm
+          registry-url: https://registry.npmjs.org/
+
+      - name: Use npm 11
+        run: npm install --global npm@11
+
+      - name: Validate release tag and manifest
+        id: release
+        run: pnpm release:check "$GITHUB_REF_NAME"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Playwright Chrome
+        run: pnpm exec playwright install --with-deps chrome
+
+      - name: Run complete verification
+        run: pnpm check
+
+      - name: Build and validate release tarball
+        run: pnpm release:pack
+
+      - name: Upload release tarball
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: react-acp-${{ steps.release.outputs.version }}
+          path: release-artifacts/*.tgz
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Publish package or verify existing version
+        shell: bash
+        env:
+          VERSION: ${{ steps.release.outputs.version }}
+          DIST_TAG: ${{ steps.release.outputs.dist_tag }}
+        run: |
+          tarball="$(node -p "JSON.parse(require('fs').readFileSync('release-artifacts/manifest.json')).tarball")"
+          test -f "$tarball"
+
+          if published_version="$(npm view "react-acp@${VERSION}" version 2>/dev/null)"; then
+            test "$published_version" = "$VERSION"
+            tagged_version="$(npm view react-acp "dist-tags.${DIST_TAG}")"
+            test "$tagged_version" = "$VERSION"
+            echo "react-acp@${VERSION} already exists with dist-tag ${DIST_TAG}; skipping publish."
+          else
+            npm publish "$tarball" --access public --tag "$DIST_TAG"
+          fi
+
+      - name: Verify npm registry state
+        shell: bash
+        env:
+          VERSION: ${{ steps.release.outputs.version }}
+          DIST_TAG: ${{ steps.release.outputs.dist_tag }}
+        run: |
+          for attempt in {1..12}; do
+            published_version="$(npm view "react-acp@${VERSION}" version 2>/dev/null || true)"
+            tagged_version="$(npm view react-acp "dist-tags.${DIST_TAG}" 2>/dev/null || true)"
+            if test "$published_version" = "$VERSION" && test "$tagged_version" = "$VERSION"; then
+              echo "Verified react-acp@${VERSION} with dist-tag ${DIST_TAG}."
+              exit 0
+            fi
+            echo "Registry has not converged (attempt ${attempt}/12); retrying in 10 seconds."
+            sleep 10
+          done
+          echo "Registry verification timed out for react-acp@${VERSION}." >&2
+          exit 1
+
+      - name: Smoke test published package
+        shell: bash
+        env:
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          smoke_dir="$(mktemp -d)"
+          pushd "$smoke_dir"
+          npm init --yes
+          npm install --ignore-scripts \
+            "react-acp@${VERSION}" \
+            "@assistant-ui/react@^0.15" \
+            "react@^19" \
+            "react-dom@^19" \
+            "typescript@^5.9"
+
+          node --input-type=module --eval \
+            "await import('react-acp'); await import('react-acp/core'); await import('react-acp/primitives');"
+
+          printf '%s\n' \
+            "import * as main from 'react-acp';" \
+            "import * as core from 'react-acp/core';" \
+            "import * as primitives from 'react-acp/primitives';" \
+            "void main; void core; void primitives;" > smoke.ts
+          ./node_modules/.bin/tsc --noEmit --skipLibCheck \
+            --module NodeNext --moduleResolution NodeNext --target ES2022 smoke.ts
+          popd
+
+      - name: Create or verify GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.release.outputs.version }}
+          PRERELEASE: ${{ steps.release.outputs.prerelease }}
+        run: |
+          tag="$GITHUB_REF_NAME"
+          tarball="$(node -p "JSON.parse(require('fs').readFileSync('release-artifacts/manifest.json')).tarball")"
+          asset_name="$(basename "$tarball")"
+
+          if gh release view "$tag" >/dev/null 2>&1; then
+            test "$(gh release view "$tag" --json isDraft --jq .isDraft)" = "false"
+            test "$(gh release view "$tag" --json isPrerelease --jq .isPrerelease)" = "$PRERELEASE"
+            gh release view "$tag" --json assets --jq '.assets[].name' | grep -Fx "$asset_name"
+            echo "GitHub Release ${tag} already exists with ${asset_name}; skipping creation."
+          else
+            args=("$tag" "$tarball" --verify-tag --generate-notes --title "$tag")
+            if test "$PRERELEASE" = "true"; then
+              args+=(--prerelease)
+            fi
+            gh release create "${args[@]}"
+          fi
