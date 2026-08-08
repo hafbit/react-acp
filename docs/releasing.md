@@ -55,15 +55,21 @@ git push origin refs/tags/v0.1.0
 ## 后续版本
 
 ```bash
+git switch latest
+git pull --ff-only
+git switch -c release/v0.2.0
 pnpm release:version 0.2.0
 git add package.json
 git commit -m "release: v0.2.0"
-git push origin latest
+git push -u origin release/v0.2.0
+gh pr create --base latest --fill
 ```
 
-等待 `latest` 的 CI 成功后：
+等待 PR 的 CI 成功并合入 `latest`，更新本地分支，再创建 annotated tag：
 
 ```bash
+git switch latest
+git pull --ff-only
 git tag -a v0.2.0 -m "v0.2.0"
 git push origin refs/tags/v0.2.0
 ```
