@@ -6,8 +6,17 @@
 
 ## 安装
 
+从 npm 安装：
+
 ```bash
 pnpm add @hafbit/react-acp @assistant-ui/react react
+```
+
+或从 [JSR](https://jsr.io/@hafbit/react-acp) 安装同一版本的 TypeScript
+源码包：
+
+```bash
+pnpm add jsr:@hafbit/react-acp @assistant-ui/react react
 ```
 
 ## 最小用法
@@ -62,6 +71,13 @@ Install and use the same minimal provider API:
 
 ```bash
 pnpm add @hafbit/react-acp @assistant-ui/react react
+```
+
+The same TypeScript source package is also published on
+[JSR](https://jsr.io/@hafbit/react-acp):
+
+```bash
+pnpm add jsr:@hafbit/react-acp @assistant-ui/react react
 ```
 
 ```tsx

@@ -1,6 +1,6 @@
 import { appendFileSync } from "node:fs";
 import {
-  assertReleaseManifest,
+  assertReleaseManifests,
   assertReleaseTagGit,
   parseReleaseTag,
 } from "./release-lib.mjs";
@@ -9,7 +9,7 @@ const tag = process.argv[2] ?? process.env.GITHUB_REF_NAME;
 
 try {
   const release = parseReleaseTag(tag);
-  assertReleaseManifest(release.version);
+  assertReleaseManifests(release.version);
   if (
     process.env.GITHUB_ACTIONS === "true" ||
     process.env.RELEASE_VERIFY_GIT === "true"

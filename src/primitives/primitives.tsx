@@ -1,6 +1,10 @@
 "use client";
 
-import type { ComponentPropsWithoutRef, ReactNode } from "react";
+import type {
+  ComponentPropsWithoutRef,
+  ReactElement,
+  ReactNode,
+} from "react";
 import {
   useAcpAuth,
   useAcpCommands,
@@ -14,7 +18,10 @@ import {
 
 type DivProps = ComponentPropsWithoutRef<"div">;
 
-export function AcpAuthMethods({ children, ...props }: DivProps) {
+export function AcpAuthMethods({
+  children,
+  ...props
+}: DivProps): ReactElement | null {
   const auth = useAcpAuth();
   if (!auth.required) return null;
   return (
@@ -33,7 +40,10 @@ export function AcpAuthMethods({ children, ...props }: DivProps) {
   );
 }
 
-export function AcpPermissionList({ children, ...props }: DivProps) {
+export function AcpPermissionList({
+  children,
+  ...props
+}: DivProps): ReactElement | null {
   const { pending, reply } = useAcpPermissions();
   if (!pending.length) return null;
   return (
@@ -65,7 +75,7 @@ export function AcpPermissionList({ children, ...props }: DivProps) {
   );
 }
 
-export function AcpPlan({ children, ...props }: DivProps) {
+export function AcpPlan({ children, ...props }: DivProps): ReactElement | null {
   const plan = useAcpPlan();
   if (!plan) return null;
   return (
@@ -88,7 +98,7 @@ export function AcpPlan({ children, ...props }: DivProps) {
 
 export function AcpModeSelect(
   props: Omit<ComponentPropsWithoutRef<"select">, "value" | "onChange">,
-) {
+): ReactElement | null {
   const modes = useAcpModes();
   const extras = useAcpRuntimeExtras();
   if (!modes) return null;
@@ -107,7 +117,10 @@ export function AcpModeSelect(
   );
 }
 
-export function AcpConfigOptions({ children, ...props }: DivProps) {
+export function AcpConfigOptions({
+  children,
+  ...props
+}: DivProps): ReactElement | null {
   const options = useAcpConfigOptions();
   const extras = useAcpRuntimeExtras();
   if (!options.length) return null;
@@ -159,7 +172,7 @@ export function AcpCommandMenu({
   onSelect,
   children,
   ...props
-}: DivProps & { onSelect?: (prompt: string) => void }) {
+}: DivProps & { onSelect?: (prompt: string) => void }): ReactElement | null {
   const commands = useAcpCommands();
   if (!commands.length) return null;
   return (
@@ -184,7 +197,7 @@ export function AcpUsage({
   ...props
 }: DivProps & {
   render?: (usage: NonNullable<ReturnType<typeof useAcpUsage>>) => ReactNode;
-}) {
+}): ReactElement | null {
   const usage = useAcpUsage();
   if (!usage) return null;
   return (
@@ -214,7 +227,7 @@ type AcpArtifact = {
 export function AcpToolArtifact({
   artifact,
   ...props
-}: DivProps & { artifact: unknown }) {
+}: DivProps & { artifact: unknown }): ReactElement | null {
   const acp = (artifact as AcpArtifact | null)?.acp;
   if (!acp) return null;
   return (
@@ -231,7 +244,7 @@ export function AcpDataPart({
   name,
   data,
   ...props
-}: DivProps & { name: string; data: unknown }) {
+}: DivProps & { name: string; data: unknown }): ReactElement {
   return (
     <div {...props} data-acp-part={name}>
       <pre>{JSON.stringify(data, null, 2)}</pre>
@@ -239,7 +252,10 @@ export function AcpDataPart({
   );
 }
 
-export function AcpDiff({ diff, ...props }: DivProps & { diff: unknown }) {
+export function AcpDiff({
+  diff,
+  ...props
+}: DivProps & { diff: unknown }): ReactElement {
   return (
     <div {...props} data-acp-part="diff">
       <pre>{typeof diff === "string" ? diff : JSON.stringify(diff, null, 2)}</pre>
@@ -250,7 +266,7 @@ export function AcpDiff({ diff, ...props }: DivProps & { diff: unknown }) {
 export function AcpTerminal({
   terminal,
   ...props
-}: DivProps & { terminal: unknown }) {
+}: DivProps & { terminal: unknown }): ReactElement {
   return (
     <div {...props} data-acp-part="terminal">
       <pre>{JSON.stringify(terminal, null, 2)}</pre>
@@ -268,7 +284,7 @@ type ResourceLike = {
 export function AcpResource({
   resource,
   ...props
-}: DivProps & { resource: unknown }) {
+}: DivProps & { resource: unknown }): ReactElement {
   const value = resource as ResourceLike | null;
   if (value?.type === "resource_link" && value.uri) {
     return (
@@ -287,7 +303,7 @@ export function AcpResource({
 export function AcpUnsupported({
   value,
   ...props
-}: DivProps & { value: unknown }) {
+}: DivProps & { value: unknown }): ReactElement {
   return (
     <div {...props} data-acp-part="unsupported">
       <pre>{JSON.stringify(value, null, 2)}</pre>

@@ -1,6 +1,7 @@
 import {
   PROTOCOL_VERSION,
   type ContentBlock,
+  type PromptResponse,
   type RequestPermissionResponse,
   type SetSessionConfigOptionRequest,
   type SessionInfo,
@@ -48,17 +49,19 @@ export class AcpThreadController {
 
   getState = (): AcpThreadState => this.state;
 
-  subscribe = (listener: () => void) => {
+  subscribe = (listener: () => void): (() => void) => {
     this.listeners.add(listener);
-    return () => this.listeners.delete(listener);
+    return () => {
+      this.listeners.delete(listener);
+    };
   };
 
-  private dispatch(event: AcpStateEvent) {
+  private dispatch(event: AcpStateEvent): void {
     this.state = reduceAcpThreadState(this.state, event);
     for (const listener of this.listeners) listener();
   }
 
-  private reportError(error: unknown) {
+  private reportError(error: unknown): void {
     this.options.onError?.(error);
   }
 
@@ -97,7 +100,7 @@ export class AcpThreadController {
     return this.connectPromise;
   }
 
-  private async doConnect() {
+  private async doConnect(): Promise<void> {
     this.abortController?.abort();
     const abortController = new AbortController();
     this.abortController = abortController;
@@ -169,20 +172,20 @@ export class AcpThreadController {
     }
   }
 
-  async reconnect() {
+  async reconnect(): Promise<void> {
     this.connection?.close();
     this.connection = undefined;
     await this.connect();
   }
 
-  async authenticate(methodId: string) {
+  async authenticate(methodId: string): Promise<void> {
     const connection = this.requireConnection();
     await connection.authenticate(methodId);
     this.dispatch({ type: "connection.status", status: "ready" });
     await this.afterAuthentication();
   }
 
-  async logout() {
+  async logout(): Promise<void> {
     if (!hasAgentCapability(this.state.capabilities, "logout")) {
       throw new AcpCapabilityError("logout");
     }
@@ -193,14 +196,14 @@ export class AcpThreadController {
     });
   }
 
-  private async afterAuthentication() {
+  private async afterAuthentication(): Promise<void> {
     if (hasAgentCapability(this.state.capabilities, "list")) {
       await this.refreshSessions();
     }
     if (this.options.threadId) await this.selectSession(this.options.threadId);
   }
 
-  async refreshSessions() {
+  async refreshSessions(): Promise<void> {
     const connection = this.requireConnection();
     const sessions: SessionInfo[] = [];
     let cursor: string | undefined;
@@ -227,7 +230,7 @@ export class AcpThreadController {
     return response.sessionId;
   }
 
-  async selectSession(sessionId: string) {
+  async selectSession(sessionId: string): Promise<void> {
     if (this.state.activeSessionId === sessionId) return;
     const connection = this.requireConnection();
     const base = buildSessionRequest(this.options.workspace, this.state.capabilities);
@@ -269,7 +272,7 @@ export class AcpThreadController {
     this.options.onThreadIdChange?.(sessionId);
   }
 
-  async deleteSession(sessionId: string) {
+  async deleteSession(sessionId: string): Promise<void> {
     if (!hasAgentCapability(this.state.capabilities, "delete")) {
       throw new AcpCapabilityError("session/delete");
     }
@@ -277,7 +280,7 @@ export class AcpThreadController {
     this.dispatch({ type: "session.deleted", sessionId });
   }
 
-  async resumeSession(sessionId: string) {
+  async resumeSession(sessionId: string): Promise<void> {
     if (!hasAgentCapability(this.state.capabilities, "resume")) {
       throw new AcpCapabilityError("session/resume");
     }
@@ -293,14 +296,17 @@ export class AcpThreadController {
     });
   }
 
-  async closeSession(sessionId: string) {
+  async closeSession(sessionId: string): Promise<void> {
     if (!hasAgentCapability(this.state.capabilities, "close")) {
       throw new AcpCapabilityError("session/close");
     }
     await this.requireConnection().closeSession(sessionId);
   }
 
-  async prompt(sessionId: string, prompt: ContentBlock[]) {
+  async prompt(
+    sessionId: string,
+    prompt: ContentBlock[],
+  ): Promise<PromptResponse> {
     const session = this.state.sessions[sessionId];
     if (session?.runState === "running" || session?.runState === "cancelling") {
       throw new AcpError("ACP_TURN_RUNNING", "An ACP prompt turn is already running.");
@@ -317,7 +323,7 @@ export class AcpThreadController {
     }
   }
 
-  async sendMessage(message: AppendMessage) {
+  async sendMessage(message: AppendMessage): Promise<void> {
     const sessionId = this.state.activeSessionId ?? (await this.createSession());
     const prompt = serializeAppendMessage(message, this.state.capabilities);
     const messageId = `local:${sessionId}:${Date.now()}:${Math.random().toString(36).slice(2)}`;
@@ -353,7 +359,7 @@ export class AcpThreadController {
     }
   }
 
-  async cancel(sessionId: string) {
+  async cancel(sessionId: string): Promise<void> {
     this.dispatch({ type: "session.cancel_started", sessionId });
     for (const [toolCallId, permission] of Object.entries(
       this.state.sessions[sessionId]?.permissions ?? {},
@@ -365,7 +371,7 @@ export class AcpThreadController {
     await this.requireConnection().cancel(sessionId);
   }
 
-  async setMode(sessionId: string, modeId: string) {
+  async setMode(sessionId: string, modeId: string): Promise<void> {
     if (!this.state.sessions[sessionId]?.modes) {
       throw new AcpCapabilityError("session/set_mode");
     }
@@ -376,7 +382,7 @@ export class AcpThreadController {
     sessionId: string,
     configId: string,
     value: string | boolean,
-  ) {
+  ): Promise<void> {
     if (
       !this.state.sessions[sessionId]?.configOptions.some(
         (option) => option.id === configId,
@@ -441,7 +447,7 @@ export class AcpThreadController {
     sessionId: string,
     toolCallId: string,
     optionId?: string,
-  ) {
+  ): Promise<void> {
     const key = `${sessionId}:${toolCallId}`;
     const waiter = this.permissionWaiters.get(key);
     if (!waiter) return;
@@ -458,7 +464,7 @@ export class AcpThreadController {
     waiter.resolve(response);
   }
 
-  dispose() {
+  dispose(): void {
     this.disposed = true;
     this.abortController?.abort(new AcpError("ACP_DISPOSED", "Controller disposed"));
     this.connection?.close();
@@ -469,7 +475,7 @@ export class AcpThreadController {
     this.listeners.clear();
   }
 
-  disconnect() {
+  disconnect(): void {
     this.abortController?.abort();
     this.connection?.close();
     this.connection = undefined;

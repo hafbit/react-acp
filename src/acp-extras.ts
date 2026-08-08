@@ -1,4 +1,8 @@
-import { createRuntimeExtras } from "@assistant-ui/core/react";
+import {
+  createRuntimeExtras,
+  type RuntimeExtras,
+} from "@assistant-ui/core/react";
 import type { AcpRuntimeExtras } from "./core/types";
 
-export const acpExtras = createRuntimeExtras<AcpRuntimeExtras>("useAcpRuntime");
+export const acpExtras: RuntimeExtras<AcpRuntimeExtras> =
+  createRuntimeExtras<AcpRuntimeExtras>("useAcpRuntime");
