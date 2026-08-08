@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 
 export const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 export const manifestPath = resolve(repoRoot, "package.json");
-export const packageName = "react-acp";
+export const packageName = "@hafbit/react-acp";
 export const repositoryUrl = "git+https://github.com/hafbit/react-acp.git";
 
 const releasePattern =
@@ -51,7 +51,9 @@ export function assertReleaseManifest(expectedVersion, manifest = readManifest()
     manifest.publishConfig?.access !== "public" ||
     manifest.publishConfig?.registry !== "https://registry.npmjs.org/"
   ) {
-    throw new Error("react-acp must publish publicly to https://registry.npmjs.org/.");
+    throw new Error(
+      "@hafbit/react-acp must publish publicly to https://registry.npmjs.org/.",
+    );
   }
   if (manifest.repository?.url !== repositoryUrl) {
     throw new Error(`package.json repository.url must be ${repositoryUrl}.`);

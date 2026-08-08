@@ -11,7 +11,7 @@ import {
   useAcpConnection,
   useAcpRuntime,
   useAcpRuntimeExtras,
-} from "react-acp";
+} from "@hafbit/react-acp";
 import { MockAcpAdapter } from "./mock-adapter";
 import "./style.css";
 

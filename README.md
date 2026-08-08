@@ -7,14 +7,14 @@
 ## 安装
 
 ```bash
-pnpm add react-acp @assistant-ui/react react
+pnpm add @hafbit/react-acp @assistant-ui/react react
 ```
 
 ## 最小用法
 
 ```tsx
 import { AssistantRuntimeProvider } from "@assistant-ui/react";
-import { useAcpRuntime } from "react-acp";
+import { useAcpRuntime } from "@hafbit/react-acp";
 
 export function AcpProvider({ children }: { children: React.ReactNode }) {
   const runtime = useAcpRuntime({
@@ -35,7 +35,7 @@ export function AcpProvider({ children }: { children: React.ReactNode }) {
 
 浏览器不能直接启动本地 stdio Agent。浏览器应用应由宿主注入 WebSocket/HTTP Stream，或注入自定义 `AcpClientAdapter`。本包不会替应用获得文件系统或终端权限。
 
-高层 adapter、纯 reducer/projector 和结构化错误从 `react-acp/core` 导出；认证、计划、模式、配置、命令、权限和 ACP artifact 的无样式组件从 `react-acp/primitives` 导出。主入口同时提供对应 hooks。
+高层 adapter、纯 reducer/projector 和结构化错误从 `@hafbit/react-acp/core` 导出；认证、计划、模式、配置、命令、权限和 ACP artifact 的无样式组件从 `@hafbit/react-acp/primitives` 导出。主入口同时提供对应 hooks。
 
 设计与验收资料：
 
@@ -61,7 +61,7 @@ The package does not launch agents, provide a gateway, persist sessions, or gran
 Install and use the same minimal provider API:
 
 ```bash
-pnpm add react-acp @assistant-ui/react react
+pnpm add @hafbit/react-acp @assistant-ui/react react
 ```
 
 ```tsx

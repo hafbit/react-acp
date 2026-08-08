@@ -1,5 +1,5 @@
 {
-  "name": "react-acp",
+  "name": "@hafbit/react-acp",
   "version": "0.1.0",
   "description": "Agent Client Protocol runtime adapter for assistant-ui",
   "repository": {

@@ -13,7 +13,7 @@ import {
 } from "./release-lib.mjs";
 
 const manifest = (version = "1.2.3") => ({
-  name: "react-acp",
+  name: "@hafbit/react-acp",
   version,
   repository: { type: "git", url: repositoryUrl },
   files: ["dist", "README.md", "LICENSE"],
