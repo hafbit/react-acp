@@ -264,7 +264,7 @@ export function projectAcpThreadMessages(
 export function projectAcpThreadRepository(
   state: AcpThreadState,
   sessionId = state.activeSessionId,
-) {
+): ExportedMessageRepository {
   return ExportedMessageRepository.fromArray(
     projectAcpThreadMessages(state, sessionId),
   );

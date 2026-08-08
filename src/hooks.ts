@@ -2,13 +2,21 @@
 
 import { useMemo } from "react";
 import { acpExtras } from "./acp-extras";
-import { createAcpThreadState, type AcpThreadState } from "./core";
+import {
+  createAcpThreadState,
+  type AcpAuthHookState,
+  type AcpConnectionHookState,
+  type AcpPermissionsHookState,
+  type AcpRuntimeExtras,
+  type AcpSessionState,
+  type AcpThreadState,
+} from "./core";
 
 const EMPTY_STATE = createAcpThreadState();
 
-export const useAcpRuntimeExtras = () => acpExtras.use();
+export const useAcpRuntimeExtras = (): AcpRuntimeExtras => acpExtras.use();
 
-export const useAcpConnection = () => {
+export const useAcpConnection = (): AcpConnectionHookState => {
   const extras = acpExtras.use((value) => value, undefined);
   return useMemo(
     () => ({
@@ -21,21 +29,21 @@ export const useAcpConnection = () => {
   );
 };
 
-export const useAcpSession = () =>
+export const useAcpSession = (): AcpSessionState | undefined =>
   acpExtras.use((extras) => extras.session, undefined);
 
 export function useAcpThreadState(): AcpThreadState;
 export function useAcpThreadState<T>(selector: (state: AcpThreadState) => T): T;
 export function useAcpThreadState<T>(
   selector?: (state: AcpThreadState) => T,
-) {
+): AcpThreadState | T {
   return acpExtras.use(
     (extras) => (selector ? selector(extras.state) : extras.state),
     selector ? selector(EMPTY_STATE) : EMPTY_STATE,
   );
 }
 
-export const useAcpAuth = () => {
+export const useAcpAuth = (): AcpAuthHookState => {
   const extras = acpExtras.use((value) => value, undefined);
   return useMemo(
     () => ({
@@ -52,7 +60,7 @@ export const useAcpAuth = () => {
   );
 };
 
-export const useAcpPermissions = () => {
+export const useAcpPermissions = (): AcpPermissionsHookState => {
   const extras = acpExtras.use((value) => value, undefined);
   const pending = extras?.session
     ? Object.values(extras.session.permissions).filter(
@@ -69,8 +77,13 @@ export const useAcpPermissions = () => {
   };
 };
 
-export const useAcpPlan = () => useAcpSession()?.plan;
-export const useAcpCommands = () => useAcpSession()?.commands ?? [];
-export const useAcpModes = () => useAcpSession()?.modes;
-export const useAcpConfigOptions = () => useAcpSession()?.configOptions ?? [];
-export const useAcpUsage = () => useAcpSession()?.usage;
+export const useAcpPlan = (): AcpSessionState["plan"] =>
+  useAcpSession()?.plan;
+export const useAcpCommands = (): AcpSessionState["commands"] =>
+  useAcpSession()?.commands ?? [];
+export const useAcpModes = (): AcpSessionState["modes"] =>
+  useAcpSession()?.modes;
+export const useAcpConfigOptions = (): AcpSessionState["configOptions"] =>
+  useAcpSession()?.configOptions ?? [];
+export const useAcpUsage = (): AcpSessionState["usage"] =>
+  useAcpSession()?.usage;

@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 
 export const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 export const manifestPath = resolve(repoRoot, "package.json");
+export const jsrManifestPath = resolve(repoRoot, "jsr.json");
 export const packageName = "@hafbit/react-acp";
 export const repositoryUrl = "git+https://github.com/hafbit/react-acp.git";
 
@@ -35,6 +36,76 @@ export function parseReleaseTag(tag) {
 
 export function readManifest(path = manifestPath) {
   return JSON.parse(readFileSync(path, "utf8"));
+}
+
+export function readJsrManifest(path = jsrManifestPath) {
+  return JSON.parse(readFileSync(path, "utf8"));
+}
+
+export const jsrExports = {
+  ".": "./src/index.ts",
+  "./core": "./src/core/index.ts",
+  "./primitives": "./src/primitives/index.ts",
+};
+
+export const requiredJsrFiles = [
+  "src/**/*.ts",
+  "src/**/*.tsx",
+  "README.md",
+  "LICENSE",
+  "package.json",
+];
+
+export function assertJsrManifest(expectedVersion, manifest = readJsrManifest()) {
+  if (manifest.name !== packageName) {
+    throw new Error(`Expected JSR package name ${packageName}, found ${manifest.name}.`);
+  }
+  parseReleaseVersion(manifest.version);
+  if (expectedVersion && manifest.version !== expectedVersion) {
+    throw new Error(
+      `JSR manifest version ${manifest.version} does not match release version ${expectedVersion}.`,
+    );
+  }
+  for (const [path, source] of Object.entries(jsrExports)) {
+    if (manifest.exports?.[path] !== source) {
+      throw new Error(`jsr.json export ${path} must be ${source}.`);
+    }
+  }
+  const included = new Set(manifest.publish?.include ?? []);
+  for (const path of requiredJsrFiles) {
+    if (!included.has(path)) {
+      throw new Error(`jsr.json publish.include must include ${path}.`);
+    }
+  }
+  return manifest;
+}
+
+export function assertReleaseManifests(
+  expectedVersion,
+  npmManifest = readManifest(),
+  jsrManifest = readJsrManifest(),
+) {
+  const npmPackage = assertReleaseManifest(expectedVersion, npmManifest);
+  const jsrPackage = assertJsrManifest(expectedVersion, jsrManifest);
+  if (npmPackage.version !== jsrPackage.version) {
+    throw new Error(
+      `package.json version ${npmPackage.version} does not match jsr.json version ${jsrPackage.version}.`,
+    );
+  }
+  return { npmManifest: npmPackage, jsrManifest: jsrPackage };
+}
+
+export function updateReleaseManifests(
+  versionInput,
+  npmManifest = readManifest(),
+  jsrManifest = readJsrManifest(),
+) {
+  const { version } = parseReleaseVersion(versionInput);
+  const current = assertReleaseManifests(undefined, npmManifest, jsrManifest);
+  return {
+    npmManifest: { ...current.npmManifest, version },
+    jsrManifest: { ...current.jsrManifest, version },
+  };
 }
 
 export function assertReleaseManifest(expectedVersion, manifest = readManifest()) {
@@ -102,6 +173,23 @@ export function assertReleaseTagGit(tag, runGit = defaultGit) {
     throw new Error(`${tag} must point to an ancestor of origin/latest.`);
   }
   return tagCommit;
+}
+
+export function assertJsrRepairGit(version, sourceRef, runGit = defaultGit) {
+  const release = parseReleaseVersion(version);
+  if (sourceRef === "latest" && release.version === "0.1.0") {
+    const head = runGit(["rev-parse", "HEAD"]);
+    const latest = runGit(["rev-parse", "refs/remotes/origin/latest"]);
+    if (head !== latest) {
+      throw new Error("The 0.1.0 JSR backfill must run from the tip of origin/latest.");
+    }
+    return head;
+  }
+  const expectedTag = `v${release.version}`;
+  if (sourceRef !== expectedTag) {
+    throw new Error(`JSR repair source_ref must be ${expectedTag}.`);
+  }
+  return assertReleaseTagGit(expectedTag, runGit);
 }
 
 export const requiredPackedFiles = [

@@ -4,23 +4,34 @@ on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Exact npm/JSR version to repair
+        required: true
+        type: string
+      source_ref:
+        description: Matching annotated tag, or latest for the 0.1.0 JSR backfill
+        required: true
+        type: string
 
 permissions:
   contents: write
   id-token: write
 
 concurrency:
-  group: npm-publish
+  group: registry-publish-${{ github.event_name == 'push' && github.ref_name || inputs.version }}
   cancel-in-progress: false
 
 jobs:
   publish:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout release tag
+      - name: Checkout release source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.source_ref || github.ref }}
 
       - name: Fetch protected release branch
         run: git fetch --no-tags origin latest:refs/remotes/origin/latest
@@ -40,9 +51,28 @@ jobs:
       - name: Use npm 11
         run: npm install --global npm@11
 
-      - name: Validate release tag and manifest
+      - name: Validate release source and manifests
         id: release
-        run: pnpm release:check "$GITHUB_REF_NAME"
+        shell: bash
+        env:
+          REPAIR_VERSION: ${{ inputs.version }}
+          REPAIR_SOURCE_REF: ${{ inputs.source_ref }}
+        run: |
+          if test "$GITHUB_EVENT_NAME" = "push"; then
+            pnpm release:check "$GITHUB_REF_NAME"
+          else
+            pnpm release:jsr-repair-check "$REPAIR_VERSION" "$REPAIR_SOURCE_REF"
+          fi
+
+      - name: Verify npm source version for JSR repair
+        if: github.event_name == 'workflow_dispatch'
+        shell: bash
+        env:
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          published_version="$(npm view "@hafbit/react-acp@${VERSION}" version)"
+          test "$published_version" = "$VERSION"
+          echo "Verified npm source version @hafbit/react-acp@${VERSION}."
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -53,10 +83,12 @@ jobs:
       - name: Run complete verification
         run: pnpm check
 
-      - name: Build and validate release tarball
+      - name: Build and validate npm release tarball
+        if: github.event_name == 'push'
         run: pnpm release:pack
 
-      - name: Upload release tarball
+      - name: Upload npm release tarball
+        if: github.event_name == 'push'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: react-acp-${{ steps.release.outputs.version }}
@@ -64,7 +96,8 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-      - name: Publish package or verify existing version
+      - name: Publish npm package or verify existing version
+        if: github.event_name == 'push'
         shell: bash
         env:
           VERSION: ${{ steps.release.outputs.version }}
@@ -77,12 +110,13 @@ jobs:
             test "$published_version" = "$VERSION"
             tagged_version="$(npm view @hafbit/react-acp "dist-tags.${DIST_TAG}")"
             test "$tagged_version" = "$VERSION"
-            echo "@hafbit/react-acp@${VERSION} already exists with dist-tag ${DIST_TAG}; skipping publish."
+            echo "@hafbit/react-acp@${VERSION} already exists with dist-tag ${DIST_TAG}; skipping npm publish."
           else
             npm publish "$tarball" --access public --tag "$DIST_TAG"
           fi
 
       - name: Verify npm registry state
+        if: github.event_name == 'push'
         shell: bash
         env:
           VERSION: ${{ steps.release.outputs.version }}
@@ -95,13 +129,14 @@ jobs:
               echo "Verified @hafbit/react-acp@${VERSION} with dist-tag ${DIST_TAG}."
               exit 0
             fi
-            echo "Registry has not converged (attempt ${attempt}/12); retrying in 10 seconds."
+            echo "npm registry has not converged (attempt ${attempt}/12); retrying in 10 seconds."
             sleep 10
           done
-          echo "Registry verification timed out for @hafbit/react-acp@${VERSION}." >&2
+          echo "npm registry verification timed out for @hafbit/react-acp@${VERSION}." >&2
           exit 1
 
-      - name: Smoke test published package
+      - name: Smoke test npm package
+        if: github.event_name == 'push'
         shell: bash
         env:
           VERSION: ${{ steps.release.outputs.version }}
@@ -128,7 +163,69 @@ jobs:
             --module NodeNext --moduleResolution NodeNext --target ES2022 smoke.ts
           popd
 
+      - name: Publish JSR package or verify existing version
+        shell: bash
+        env:
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          if curl --fail --silent --show-error \
+            "https://jsr.io/api/scopes/hafbit/packages/react-acp/versions/${VERSION}" \
+            >/dev/null 2>&1; then
+            echo "@hafbit/react-acp@${VERSION} already exists on JSR; skipping publish."
+          else
+            pnpm exec jsr publish
+          fi
+
+      - name: Verify JSR registry state
+        shell: bash
+        env:
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          for attempt in {1..12}; do
+            response="$(curl --fail --silent --show-error \
+              "https://jsr.io/api/scopes/hafbit/packages/react-acp/versions/${VERSION}" 2>/dev/null || true)"
+            published_version="$(node -e \
+              "try { const value = JSON.parse(process.argv[1]); process.stdout.write(value.version ?? '') } catch {}" \
+              "$response")"
+            if test "$published_version" = "$VERSION"; then
+              echo "Verified JSR @hafbit/react-acp@${VERSION}."
+              exit 0
+            fi
+            echo "JSR has not converged (attempt ${attempt}/12); retrying in 10 seconds."
+            sleep 10
+          done
+          echo "JSR verification timed out for @hafbit/react-acp@${VERSION}." >&2
+          exit 1
+
+      - name: Smoke test JSR package
+        shell: bash
+        env:
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          smoke_dir="$(mktemp -d)"
+          pushd "$smoke_dir"
+          pnpm init
+          pnpm add --ignore-scripts \
+            "jsr:@hafbit/react-acp@${VERSION}" \
+            "@assistant-ui/react@^0.15" \
+            "react@^19" \
+            "react-dom@^19" \
+            "typescript@^5.9"
+
+          node --input-type=module --eval \
+            "await import('@hafbit/react-acp'); await import('@hafbit/react-acp/core'); await import('@hafbit/react-acp/primitives');"
+
+          printf '%s\n' \
+            "import * as main from '@hafbit/react-acp';" \
+            "import * as core from '@hafbit/react-acp/core';" \
+            "import * as primitives from '@hafbit/react-acp/primitives';" \
+            "void main; void core; void primitives;" > smoke.ts
+          pnpm exec tsc --noEmit --skipLibCheck \
+            --module NodeNext --moduleResolution NodeNext --target ES2022 smoke.ts
+          popd
+
       - name: Create or verify GitHub Release
+        if: github.event_name == 'push'
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -4,7 +4,7 @@ import { basename, resolve } from "node:path";
 import {
   assertPackedFiles,
   assertPackedManifest,
-  assertReleaseManifest,
+  assertReleaseManifests,
   repoRoot,
 } from "./release-lib.mjs";
 
@@ -13,7 +13,7 @@ const run = (command, args, options = {}) =>
   execFileSync(command, args, { cwd: repoRoot, stdio: "inherit", ...options });
 
 try {
-  const sourceManifest = assertReleaseManifest();
+  const { npmManifest: sourceManifest } = assertReleaseManifests();
   rmSync(artifactDir, { recursive: true, force: true });
   mkdirSync(artifactDir, { recursive: true });
   run("pnpm", ["build"]);

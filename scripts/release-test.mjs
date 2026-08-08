@@ -2,14 +2,18 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   assertCleanWorkingTree,
+  assertJsrManifest,
+  assertJsrRepairGit,
   assertPackedFiles,
   assertPackedManifest,
   assertReleaseManifest,
+  assertReleaseManifests,
   assertReleaseTagGit,
   parseReleaseTag,
   parseReleaseVersion,
   requiredPackedFiles,
   repositoryUrl,
+  updateReleaseManifests,
 } from "./release-lib.mjs";
 
 const manifest = (version = "1.2.3") => ({
@@ -31,6 +35,25 @@ const manifest = (version = "1.2.3") => ({
   publishConfig: {
     access: "public",
     registry: "https://registry.npmjs.org/",
+  },
+});
+
+const jsrManifest = (version = "1.2.3") => ({
+  name: "@hafbit/react-acp",
+  version,
+  exports: {
+    ".": "./src/index.ts",
+    "./core": "./src/core/index.ts",
+    "./primitives": "./src/primitives/index.ts",
+  },
+  publish: {
+    include: [
+      "src/**/*.ts",
+      "src/**/*.tsx",
+      "README.md",
+      "LICENSE",
+      "package.json",
+    ],
   },
 });
 
@@ -67,6 +90,49 @@ test("validates manifest version, repository, exports, and publish target", () =
   );
 });
 
+test("validates synchronized npm and JSR manifests", () => {
+  assert.equal(assertJsrManifest("1.2.3", jsrManifest()).version, "1.2.3");
+  assert.doesNotThrow(() =>
+    assertReleaseManifests("1.2.3", manifest(), jsrManifest()),
+  );
+  assert.throws(
+    () => assertReleaseManifests(undefined, manifest(), jsrManifest("1.2.4")),
+    /does not match jsr.json/,
+  );
+  assert.throws(
+    () =>
+      assertJsrManifest("1.2.3", {
+        ...jsrManifest(),
+        exports: { ...jsrManifest().exports, "./core": "./dist/core/index.js" },
+      }),
+    /export \.\/core/,
+  );
+  assert.throws(
+    () => assertJsrManifest("1.2.3", { ...jsrManifest(), name: "@hafbit/wrong" }),
+    /JSR package name/,
+  );
+  assert.throws(
+    () =>
+      assertJsrManifest("1.2.3", {
+        ...jsrManifest(),
+        publish: { include: ["src/**/*.ts"] },
+      }),
+    /publish.include/,
+  );
+});
+
+test("updates npm and JSR versions together", () => {
+  const updated = updateReleaseManifests(
+    "2.0.0-rc.1",
+    manifest(),
+    jsrManifest(),
+  );
+  assert.equal(updated.npmManifest.version, "2.0.0-rc.1");
+  assert.equal(updated.jsrManifest.version, "2.0.0-rc.1");
+  assert.equal(updated.npmManifest.name, "@hafbit/react-acp");
+  assert.equal(updated.jsrManifest.exports["./core"], "./src/core/index.ts");
+});
+
 test("rejects dirty worktrees", () => {
   assert.doesNotThrow(() => assertCleanWorkingTree(() => ""));
   assert.throws(() => assertCleanWorkingTree(() => " M package.json"), /clean/);
@@ -92,6 +158,34 @@ test("requires an annotated tag on origin/latest", () => {
         throw new Error("not ancestor");
       }),
     /origin\/latest/,
+  );
+});
+
+test("restricts JSR repair sources and the 0.1.0 latest backfill", () => {
+  const tagged = (args) => {
+    if (args[0] === "cat-file") return "tag";
+    if (args[0] === "rev-list") return "abc123";
+    if (args[0] === "merge-base") return "";
+    throw new Error(`Unexpected git command: ${args.join(" ")}`);
+  };
+  assert.equal(assertJsrRepairGit("1.2.3", "v1.2.3", tagged), "abc123");
+  assert.throws(
+    () => assertJsrRepairGit("1.2.3", "latest", tagged),
+    /must be v1.2.3/,
+  );
+
+  const latest = (args) => {
+    if (args[0] === "rev-parse" && args[1] === "HEAD") return "tip";
+    if (args[0] === "rev-parse") return "tip";
+    throw new Error(`Unexpected git command: ${args.join(" ")}`);
+  };
+  assert.equal(assertJsrRepairGit("0.1.0", "latest", latest), "tip");
+  assert.throws(
+    () =>
+      assertJsrRepairGit("0.1.0", "latest", (args) =>
+        args[1] === "HEAD" ? "old" : "tip",
+      ),
+    /tip of origin\/latest/,
   );
 });
 

@@ -298,6 +298,25 @@ export type AcpRuntimeExtras = {
   replyToPermission(toolCallId: string, optionId?: string): Promise<void>;
 };
 
+export type AcpConnectionHookState = {
+  status: AcpConnectionStatus;
+  error: unknown;
+  capabilities: AgentCapabilities | undefined;
+  reconnect(): Promise<void>;
+};
+
+export type AcpAuthHookState = {
+  methods: readonly AuthMethod[];
+  required: boolean;
+  authenticate(methodId: string): Promise<void>;
+  logout(): Promise<void>;
+};
+
+export type AcpPermissionsHookState = {
+  pending: readonly AcpPermissionRecord[];
+  reply(toolCallId: string, optionId?: string): Promise<void>;
+};
+
 export type AcpRuntimeOptions = ExternalStoreSharedOptions & {
   connection: AcpConnectionSource;
   workspace: AcpWorkspace;

@@ -5,6 +5,7 @@ import {
   type KillTerminalRequest,
 } from "@agentclientprotocol/sdk";
 import type {
+  AcpAdapterConnectOptions,
   AcpClientAdapter,
   AcpClientConnection,
   AcpStreamFactory,
@@ -16,7 +17,10 @@ export class SdkAcpClientAdapter implements AcpClientAdapter {
     private readonly name = "react-acp",
   ) {}
 
-  async connect({ handlers, signal }: Parameters<AcpClientAdapter["connect"]>[0]) {
+  async connect({
+    handlers,
+    signal,
+  }: AcpAdapterConnectOptions): Promise<AcpClientConnection> {
     let app = client({ name: this.name })
       .onNotification(methods.client.session.update, ({ params }) =>
         handlers.sessionUpdate(params),
