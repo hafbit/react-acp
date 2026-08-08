@@ -15,21 +15,21 @@
 
 ## 首次发布 0.1.0
 
-`react-acp` 首次出现于 npm registry 前无法绑定 package 级 Trusted Publisher，因此只对首版执行一次人工 bootstrap：
+`@hafbit/react-acp` 首次出现于 npm registry 前无法绑定 package 级 Trusted Publisher，因此只对首版执行一次人工 bootstrap：
 
 ```bash
 pnpm install --frozen-lockfile
 pnpm check
 pnpm release:pack
 npm login
-npm publish ./release-artifacts/react-acp-0.1.0.tgz --access public --tag latest
+npm publish ./release-artifacts/hafbit-react-acp-0.1.0.tgz --access public --tag latest
 ```
 
 `npm login` 和首次 publish 必须由包所有者完成 2FA。发布后先验证：
 
 ```bash
-npm view react-acp@0.1.0 version
-npm view react-acp dist-tags.latest
+npm view @hafbit/react-acp@0.1.0 version
+npm view @hafbit/react-acp dist-tags.latest
 ```
 
 随后进入 npm package settings，配置：

@@ -3,7 +3,7 @@ import type {
   AcpAdapterConnectOptions,
   AcpClientAdapter,
   AcpClientConnection,
-} from "react-acp/core";
+} from "@hafbit/react-acp/core";
 
 export class MockAcpAdapter implements AcpClientAdapter {
   private sequence = 2;

@@ -73,11 +73,11 @@ jobs:
           tarball="$(node -p "JSON.parse(require('fs').readFileSync('release-artifacts/manifest.json')).tarball")"
           test -f "$tarball"
 
-          if published_version="$(npm view "react-acp@${VERSION}" version 2>/dev/null)"; then
+          if published_version="$(npm view "@hafbit/react-acp@${VERSION}" version 2>/dev/null)"; then
             test "$published_version" = "$VERSION"
-            tagged_version="$(npm view react-acp "dist-tags.${DIST_TAG}")"
+            tagged_version="$(npm view @hafbit/react-acp "dist-tags.${DIST_TAG}")"
             test "$tagged_version" = "$VERSION"
-            echo "react-acp@${VERSION} already exists with dist-tag ${DIST_TAG}; skipping publish."
+            echo "@hafbit/react-acp@${VERSION} already exists with dist-tag ${DIST_TAG}; skipping publish."
           else
             npm publish "$tarball" --access public --tag "$DIST_TAG"
           fi
@@ -89,16 +89,16 @@ jobs:
           DIST_TAG: ${{ steps.release.outputs.dist_tag }}
         run: |
           for attempt in {1..12}; do
-            published_version="$(npm view "react-acp@${VERSION}" version 2>/dev/null || true)"
-            tagged_version="$(npm view react-acp "dist-tags.${DIST_TAG}" 2>/dev/null || true)"
+            published_version="$(npm view "@hafbit/react-acp@${VERSION}" version 2>/dev/null || true)"
+            tagged_version="$(npm view @hafbit/react-acp "dist-tags.${DIST_TAG}" 2>/dev/null || true)"
             if test "$published_version" = "$VERSION" && test "$tagged_version" = "$VERSION"; then
-              echo "Verified react-acp@${VERSION} with dist-tag ${DIST_TAG}."
+              echo "Verified @hafbit/react-acp@${VERSION} with dist-tag ${DIST_TAG}."
               exit 0
             fi
             echo "Registry has not converged (attempt ${attempt}/12); retrying in 10 seconds."
             sleep 10
           done
-          echo "Registry verification timed out for react-acp@${VERSION}." >&2
+          echo "Registry verification timed out for @hafbit/react-acp@${VERSION}." >&2
           exit 1
 
       - name: Smoke test published package
@@ -110,19 +110,19 @@ jobs:
           pushd "$smoke_dir"
           npm init --yes
           npm install --ignore-scripts \
-            "react-acp@${VERSION}" \
+            "@hafbit/react-acp@${VERSION}" \
             "@assistant-ui/react@^0.15" \
             "react@^19" \
             "react-dom@^19" \
             "typescript@^5.9"
 
           node --input-type=module --eval \
-            "await import('react-acp'); await import('react-acp/core'); await import('react-acp/primitives');"
+            "await import('@hafbit/react-acp'); await import('@hafbit/react-acp/core'); await import('@hafbit/react-acp/primitives');"
 
           printf '%s\n' \
-            "import * as main from 'react-acp';" \
-            "import * as core from 'react-acp/core';" \
-            "import * as primitives from 'react-acp/primitives';" \
+            "import * as main from '@hafbit/react-acp';" \
+            "import * as core from '@hafbit/react-acp/core';" \
+            "import * as primitives from '@hafbit/react-acp/primitives';" \
             "void main; void core; void primitives;" > smoke.ts
           ./node_modules/.bin/tsc --noEmit --skipLibCheck \
             --module NodeNext --moduleResolution NodeNext --target ES2022 smoke.ts
