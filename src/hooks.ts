@@ -14,8 +14,10 @@ import {
 
 const EMPTY_STATE = createAcpThreadState();
 
+/** Returns the ACP-specific commands and state attached to the current runtime. */
 export const useAcpRuntimeExtras = (): AcpRuntimeExtras => acpExtras.use();
 
+/** Returns connection status, advertised capabilities, errors, and reconnect. */
 export const useAcpConnection = (): AcpConnectionHookState => {
   const extras = acpExtras.use((value) => value, undefined);
   return useMemo(
@@ -29,10 +31,13 @@ export const useAcpConnection = (): AcpConnectionHookState => {
   );
 };
 
+/** Returns the active ACP session, or `undefined` before one is selected. */
 export const useAcpSession = (): AcpSessionState | undefined =>
   acpExtras.use((extras) => extras.session, undefined);
 
+/** Returns the complete ACP thread state. */
 export function useAcpThreadState(): AcpThreadState;
+/** Selects a derived value from the complete ACP thread state. */
 export function useAcpThreadState<T>(selector: (state: AcpThreadState) => T): T;
 export function useAcpThreadState<T>(
   selector?: (state: AcpThreadState) => T,
@@ -43,6 +48,7 @@ export function useAcpThreadState<T>(
   );
 }
 
+/** Returns advertised authentication methods and authentication actions. */
 export const useAcpAuth = (): AcpAuthHookState => {
   const extras = acpExtras.use((value) => value, undefined);
   return useMemo(
@@ -60,6 +66,7 @@ export const useAcpAuth = (): AcpAuthHookState => {
   );
 };
 
+/** Returns pending tool permissions for the active session and a reply action. */
 export const useAcpPermissions = (): AcpPermissionsHookState => {
   const extras = acpExtras.use((value) => value, undefined);
   const pending = extras?.session
@@ -77,13 +84,18 @@ export const useAcpPermissions = (): AcpPermissionsHookState => {
   };
 };
 
+/** Returns the latest plan update for the active session. */
 export const useAcpPlan = (): AcpSessionState["plan"] =>
   useAcpSession()?.plan;
+/** Returns the commands currently advertised by the active ACP session. */
 export const useAcpCommands = (): AcpSessionState["commands"] =>
   useAcpSession()?.commands ?? [];
+/** Returns the available and selected modes for the active session. */
 export const useAcpModes = (): AcpSessionState["modes"] =>
   useAcpSession()?.modes;
+/** Returns the configuration options currently advertised by the active session. */
 export const useAcpConfigOptions = (): AcpSessionState["configOptions"] =>
   useAcpSession()?.configOptions ?? [];
+/** Returns the latest ACP usage update for the active session. */
 export const useAcpUsage = (): AcpSessionState["usage"] =>
   useAcpSession()?.usage;

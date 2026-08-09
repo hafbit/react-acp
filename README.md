@@ -46,6 +46,20 @@ export function AcpProvider({ children }: { children: React.ReactNode }) {
 
 高层 adapter、纯 reducer/projector 和结构化错误从 `@hafbit/react-acp/core` 导出；认证、计划、模式、配置、命令、权限和 ACP artifact 的无样式组件从 `@hafbit/react-acp/primitives` 导出。主入口同时提供对应 hooks。
 
+## 入口与 API
+
+| 入口 | 适用场景 | 主要导出 |
+| --- | --- | --- |
+| `@hafbit/react-acp` | React 应用的常规集成 | `useAcpRuntime`、ACP hooks、常用无样式组件与公开类型 |
+| `@hafbit/react-acp/core` | 自定义宿主、transport 或状态投影 | `AcpThreadController`、`SdkAcpClientAdapter`、reducer、projector、serializer、错误和类型 |
+| `@hafbit/react-acp/primitives` | 自定义 ACP 交互界面 | 认证、权限、计划、模式、配置、命令、用量和 tool artifact 组件 |
+
+```tsx
+import { useAcpRuntime } from "@hafbit/react-acp";
+import { AcpThreadController } from "@hafbit/react-acp/core";
+import { AcpPermissionList } from "@hafbit/react-acp/primitives";
+```
+
 设计与验收资料：
 
 - [需求基线](./docs/requirements.md)
@@ -66,6 +80,10 @@ pnpm --dir examples/vite dev
 `react-acp` is a transport-agnostic ACP v1 runtime adapter for assistant-ui. It projects ACP sessions, messages, reasoning, tools, permissions, plans, modes, config options, and usage into assistant-ui state while preserving raw ACP metadata.
 
 The package does not launch agents, provide a gateway, persist sessions, or grant filesystem/terminal access. Applications inject either an ACP `Stream` factory or an `AcpClientAdapter`.
+
+The package exposes three entrypoints: the default React runtime and hooks,
+`@hafbit/react-acp/core` for headless integration, and
+`@hafbit/react-acp/primitives` for unstyled ACP UI components.
 
 Install and use the same minimal provider API:
 

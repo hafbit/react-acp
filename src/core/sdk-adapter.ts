@@ -11,12 +11,15 @@ import type {
   AcpStreamFactory,
 } from "./types";
 
+/** ACP client adapter implemented with the official TypeScript SDK and a stream factory. */
 export class SdkAcpClientAdapter implements AcpClientAdapter {
+  /** Creates an SDK adapter for a host-provided ACP stream. */
   constructor(
     private readonly createStream: AcpStreamFactory,
     private readonly name = "react-acp",
   ) {}
 
+  /** Opens the stream, installs client request handlers, and returns a connection facade. */
   async connect({
     handlers,
     signal,

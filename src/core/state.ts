@@ -14,6 +14,7 @@ import type {
   AcpToolCallRecord,
 } from "./types";
 
+/** Creates the empty, disconnected ACP thread repository. */
 export const createAcpThreadState = (): AcpThreadState => ({
   connectionStatus: "idle",
   authMethods: [],
@@ -21,6 +22,7 @@ export const createAcpThreadState = (): AcpThreadState => ({
   sessionOrder: [],
 });
 
+/** Creates empty protocol-authoritative state for an ACP session ID. */
 export const createAcpSessionState = (
   sessionId: string,
 ): AcpSessionState => ({
@@ -248,6 +250,12 @@ const finalizeAssistantMessage = (
   }));
 };
 
+/**
+ * Applies one connection, session, message, tool, or permission event.
+ *
+ * The reducer is pure apart from locally generated message timestamps and is
+ * suitable for deterministic projection tests with controlled time.
+ */
 export function reduceAcpThreadState(
   state: AcpThreadState,
   event: AcpStateEvent,
@@ -428,6 +436,7 @@ export function reduceAcpThreadState(
   }
 }
 
+/** Tests whether an optional stable ACP session or auth capability is advertised. */
 export const hasAgentCapability = (
   capabilities: AgentCapabilities | undefined,
   capability: "load" | "list" | "delete" | "resume" | "close" | "logout",
