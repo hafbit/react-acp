@@ -1,9 +1,6 @@
 import type { SessionUpdate } from "@agentclientprotocol/sdk";
 import { describe, expect, it } from "vitest";
-import {
-  createAcpThreadState,
-  reduceAcpThreadState,
-} from "../src/core/state";
+import { createAcpThreadState, reduceAcpThreadState } from "../src/core/state";
 
 const update = (sessionId: string, value: SessionUpdate) => ({
   type: "session.update" as const,
@@ -13,21 +10,30 @@ const update = (sessionId: string, value: SessionUpdate) => ({
 describe("reduceAcpThreadState", () => {
   it("按 messageId 合并分块，并在缺失时生成稳定本地 ID", () => {
     let state = createAcpThreadState();
-    state = reduceAcpThreadState(state, update("s1", {
-      sessionUpdate: "agent_message_chunk",
-      messageId: "m1",
-      content: { type: "text", text: "hel" },
-      _meta: { trace: "a" },
-    }));
-    state = reduceAcpThreadState(state, update("s1", {
-      sessionUpdate: "agent_message_chunk",
-      messageId: "m1",
-      content: { type: "text", text: "lo" },
-    }));
-    state = reduceAcpThreadState(state, update("s2", {
-      sessionUpdate: "agent_message_chunk",
-      content: { type: "text", text: "isolated" },
-    }));
+    state = reduceAcpThreadState(
+      state,
+      update("s1", {
+        sessionUpdate: "agent_message_chunk",
+        messageId: "m1",
+        content: { type: "text", text: "hel" },
+        _meta: { trace: "a" },
+      }),
+    );
+    state = reduceAcpThreadState(
+      state,
+      update("s1", {
+        sessionUpdate: "agent_message_chunk",
+        messageId: "m1",
+        content: { type: "text", text: "lo" },
+      }),
+    );
+    state = reduceAcpThreadState(
+      state,
+      update("s2", {
+        sessionUpdate: "agent_message_chunk",
+        content: { type: "text", text: "isolated" },
+      }),
+    );
 
     expect(state.sessions.s1?.messages).toHaveLength(1);
     expect(state.sessions.s1?.messages[0]?.id).toBe("m1");
@@ -37,20 +43,26 @@ describe("reduceAcpThreadState", () => {
 
   it("接受先于 tool_call 到达的 update，并增量合并", () => {
     let state = createAcpThreadState();
-    state = reduceAcpThreadState(state, update("s1", {
-      sessionUpdate: "tool_call_update",
-      toolCallId: "tool-1",
-      status: "in_progress",
-      rawOutput: { partial: true },
-    }));
-    state = reduceAcpThreadState(state, update("s1", {
-      sessionUpdate: "tool_call",
-      toolCallId: "tool-1",
-      title: "Read file",
-      kind: "read",
-      status: "completed",
-      rawInput: { path: "/tmp/a" },
-    }));
+    state = reduceAcpThreadState(
+      state,
+      update("s1", {
+        sessionUpdate: "tool_call_update",
+        toolCallId: "tool-1",
+        status: "in_progress",
+        rawOutput: { partial: true },
+      }),
+    );
+    state = reduceAcpThreadState(
+      state,
+      update("s1", {
+        sessionUpdate: "tool_call",
+        toolCallId: "tool-1",
+        title: "Read file",
+        kind: "read",
+        status: "completed",
+        rawInput: { path: "/tmp/a" },
+      }),
+    );
 
     const tool = state.sessions.s1?.tools["tool-1"];
     expect(tool?.value).toMatchObject({
@@ -95,10 +107,13 @@ describe("reduceAcpThreadState", () => {
     ["max_turn_requests", "incomplete"],
   ] as const)("映射 stop reason %s", (stopReason, expected) => {
     let state = createAcpThreadState();
-    state = reduceAcpThreadState(state, update("s1", {
-      sessionUpdate: "agent_message_chunk",
-      content: { type: "text", text: "done" },
-    }));
+    state = reduceAcpThreadState(
+      state,
+      update("s1", {
+        sessionUpdate: "agent_message_chunk",
+        content: { type: "text", text: "done" },
+      }),
+    );
     state = reduceAcpThreadState(state, {
       type: "session.prompt_stopped",
       sessionId: "s1",
@@ -110,24 +125,33 @@ describe("reduceAcpThreadState", () => {
 
   it("加载历史前替换本地投影且不污染其他会话", () => {
     let state = createAcpThreadState();
-    state = reduceAcpThreadState(state, update("s1", {
-      sessionUpdate: "user_message_chunk",
-      content: { type: "text", text: "old" },
-    }));
-    state = reduceAcpThreadState(state, update("s2", {
-      sessionUpdate: "user_message_chunk",
-      content: { type: "text", text: "keep" },
-    }));
+    state = reduceAcpThreadState(
+      state,
+      update("s1", {
+        sessionUpdate: "user_message_chunk",
+        content: { type: "text", text: "old" },
+      }),
+    );
+    state = reduceAcpThreadState(
+      state,
+      update("s2", {
+        sessionUpdate: "user_message_chunk",
+        content: { type: "text", text: "keep" },
+      }),
+    );
     state = reduceAcpThreadState(state, { type: "session.loading", sessionId: "s1" });
     expect(state.sessions.s1?.messages).toEqual([]);
     expect(state.sessions.s2?.messages).toHaveLength(1);
   });
 
   it("未知扩展进入 unhandledEvents 而不崩溃", () => {
-    const state = reduceAcpThreadState(createAcpThreadState(), update("s1", {
-      sessionUpdate: "vendor_extension",
-      payload: { answer: 42 },
-    } as unknown as SessionUpdate));
+    const state = reduceAcpThreadState(
+      createAcpThreadState(),
+      update("s1", {
+        sessionUpdate: "vendor_extension",
+        payload: { answer: 42 },
+      } as unknown as SessionUpdate),
+    );
     expect(state.sessions.s1?.unhandledEvents).toHaveLength(1);
     expect(state.sessions.s1?.messages[0]?.pieces[0]).toMatchObject({
       type: "unsupported",
@@ -155,9 +179,7 @@ describe("reduceAcpThreadState", () => {
       },
       {
         sessionUpdate: "available_commands_update" as const,
-        availableCommands: [
-          { name: "review", description: "Review changes", input: null },
-        ],
+        availableCommands: [{ name: "review", description: "Review changes", input: null }],
       },
       { sessionUpdate: "current_mode_update" as const, currentModeId: "code" },
       {
@@ -207,10 +229,11 @@ describe("reduceAcpThreadState", () => {
       messageId: "local-1",
       error: new Error("network"),
     });
-    expect(state.sessions.s1?.messages[0]).toMatchObject({
+    const message = state.sessions.s1?.messages[0];
+    expect(message).toMatchObject({
       id: "local-1",
       optimistic: false,
-      error: expect.any(Error),
     });
+    expect(message?.error).toBeInstanceOf(Error);
   });
 });

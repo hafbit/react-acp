@@ -46,8 +46,10 @@ describe("AcpThreadController conformance fixture", () => {
 
     const session = controller.getState().sessions.s1!;
     expect(session.messages.some((message) => message.optimistic)).toBe(true);
-    expect(session.messages.find((message) => message.id === "agent-answer")?.status)
-      .toEqual({ type: "complete", stopReason: "end_turn" });
+    expect(session.messages.find((message) => message.id === "agent-answer")?.status).toEqual({
+      type: "complete",
+      stopReason: "end_turn",
+    });
     expect(adapter.connection.prompt).toHaveBeenCalledWith({
       sessionId: "s1",
       prompt: [{ type: "text", text: "hello" }],

@@ -14,18 +14,14 @@ import {
 
 describe("ACP serialization and capabilities", () => {
   it("拒绝相对工作区路径", () => {
-    expect(() => validateWorkspace({ cwd: "relative/path" })).toThrow(
-      AcpInvalidWorkspaceError,
-    );
+    expect(() => validateWorkspace({ cwd: "relative/path" })).toThrow(AcpInvalidWorkspaceError);
   });
 
   it("拒绝使用相对命令的 stdio MCP server", () => {
     expect(() =>
       validateWorkspace({
         cwd: "/workspace",
-        mcpServers: [
-          { name: "mcp", command: "node", args: [], env: [] },
-        ],
+        mcpServers: [{ name: "mcp", command: "node", args: [], env: [] }],
       }),
     ).toThrow(AcpInvalidWorkspaceError);
   });
@@ -33,9 +29,11 @@ describe("ACP serialization and capabilities", () => {
   it("仅在 Agent 声明能力时发送 additionalDirectories", () => {
     const workspace = { cwd: "/workspace", additionalDirectories: ["/shared"] };
     expect(buildSessionRequest(workspace)).not.toHaveProperty("additionalDirectories");
-    expect(buildSessionRequest(workspace, {
-      sessionCapabilities: { additionalDirectories: {} },
-    })).toHaveProperty("additionalDirectories", ["/shared"]);
+    expect(
+      buildSessionRequest(workspace, {
+        sessionCapabilities: { additionalDirectories: {} },
+      }),
+    ).toHaveProperty("additionalDirectories", ["/shared"]);
   });
 
   it("按 Agent capability 门控 HTTP/SSE MCP transport", () => {
@@ -50,12 +48,12 @@ describe("ACP serialization and capabilities", () => {
         },
       ],
     };
-    expect(() => buildSessionRequest(workspace, {})).toThrow(
-      AcpCapabilityError,
-    );
-    expect(buildSessionRequest(workspace, {
-      mcpCapabilities: { http: true },
-    }).mcpServers).toEqual(workspace.mcpServers);
+    expect(() => buildSessionRequest(workspace, {})).toThrow(AcpCapabilityError);
+    expect(
+      buildSessionRequest(workspace, {
+        mcpCapabilities: { http: true },
+      }).mcpServers,
+    ).toEqual(workspace.mcpServers);
   });
 
   it("只声明实际注入的文件系统和整组终端能力", () => {
@@ -87,9 +85,11 @@ describe("ACP serialization and capabilities", () => {
         },
       ],
     } as unknown as AppendMessage;
-    expect(serializeAppendMessage(message, {
-      promptCapabilities: { image: true, audio: true },
-    })).toMatchObject([
+    expect(
+      serializeAppendMessage(message, {
+        promptCapabilities: { image: true, audio: true },
+      }),
+    ).toMatchObject([
       { type: "text", text: "hello" },
       { type: "image", mimeType: "image/png", data: "YQ==" },
       { type: "resource_link", uri: "https://example.test/docs" },
@@ -102,8 +102,6 @@ describe("ACP serialization and capabilities", () => {
       role: "user",
       content: [{ type: "image", image: "data:image/png;base64,YQ==" }],
     } as unknown as AppendMessage;
-    expect(() => serializeAppendMessage(message, {})).toThrow(
-      AcpUnsupportedContentError,
-    );
+    expect(() => serializeAppendMessage(message, {})).toThrow(AcpUnsupportedContentError);
   });
 });

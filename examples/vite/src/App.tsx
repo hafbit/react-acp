@@ -1,8 +1,4 @@
-import {
-  AssistantRuntimeProvider,
-  ComposerPrimitive,
-  ThreadPrimitive,
-} from "@assistant-ui/react";
+import { AssistantRuntimeProvider, ComposerPrimitive, ThreadPrimitive } from "@assistant-ui/react";
 import { useMemo, useState } from "react";
 import {
   AcpConfigOptions,

@@ -1,11 +1,9 @@
-*.tsbuildinfo
-.DS_Store
-.pnpm-store/
 coverage/
 deno.lock
 dist/
 examples/vite/dist/
 node_modules/
 playwright-report/
+pnpm-lock.yaml
 release-artifacts/
 test-results/

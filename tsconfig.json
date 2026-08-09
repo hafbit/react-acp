@@ -15,13 +15,6 @@
     "resolveJsonModule": true,
     "types": ["node", "vitest/globals"]
   },
-  "include": [
-    "src",
-    "tests",
-    "e2e",
-    "tsup.config.ts",
-    "vitest.config.ts",
-    "playwright.config.ts"
-  ],
+  "include": ["src", "tests", "e2e", "tsup.config.ts", "vitest.config.ts", "playwright.config.ts"],
   "exclude": ["dist", "node_modules", "examples"]
 }

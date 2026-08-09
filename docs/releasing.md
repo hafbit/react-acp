@@ -4,12 +4,12 @@
 
 ## 版本与 dist-tag
 
-| Git tag | npm version | npm dist-tag | JSR version | GitHub Release |
-| --- | --- | --- | --- | --- |
-| `v1.2.3` | `1.2.3` | `latest` | `1.2.3` | 正式版 |
-| `v1.2.3-alpha.0` | `1.2.3-alpha.0` | `alpha` | `1.2.3-alpha.0` | prerelease |
-| `v1.2.3-beta.0` | `1.2.3-beta.0` | `beta` | `1.2.3-beta.0` | prerelease |
-| `v1.2.3-rc.0` | `1.2.3-rc.0` | `rc` | `1.2.3-rc.0` | prerelease |
+| Git tag          | npm version     | npm dist-tag | JSR version     | GitHub Release |
+| ---------------- | --------------- | ------------ | --------------- | -------------- |
+| `v1.2.3`         | `1.2.3`         | `latest`     | `1.2.3`         | 正式版         |
+| `v1.2.3-alpha.0` | `1.2.3-alpha.0` | `alpha`      | `1.2.3-alpha.0` | prerelease     |
+| `v1.2.3-beta.0`  | `1.2.3-beta.0`  | `beta`       | `1.2.3-beta.0`  | prerelease     |
+| `v1.2.3-rc.0`    | `1.2.3-rc.0`    | `rc`         | `1.2.3-rc.0`    | prerelease     |
 
 其他 prerelease 格式会被 `release:check` 拒绝。发布 tag 必须是 annotated tag，且目标提交必须属于 `origin/latest`。JSR 没有 npm dist-tag 的对应概念，预发布版本通过完整 SemVer 获取。
 

@@ -47,7 +47,7 @@ export class ConformanceAdapter implements AcpClientAdapter {
         },
       ],
     })),
-    loadSession: vi.fn(async ({ sessionId }) => {
+    loadSession: vi.fn<AcpClientConnection["loadSession"]>(async ({ sessionId }) => {
       await this.handlers?.sessionUpdate({
         sessionId,
         update: {
@@ -71,18 +71,20 @@ export class ConformanceAdapter implements AcpClientAdapter {
     resumeSession: vi.fn(async () => ({})),
     closeSession: vi.fn(async () => {}),
     setSessionMode: vi.fn(async () => {}),
-    setSessionConfigOption: vi.fn(async ({ configId, value }) => ({
-      configOptions: [
-        {
-          type: "boolean" as const,
-          id: configId,
-          name: configId,
-          category: "mode",
-          currentValue: Boolean(value),
-        },
-      ],
-    })),
-    prompt: vi.fn(async ({ sessionId }) => {
+    setSessionConfigOption: vi.fn<AcpClientConnection["setSessionConfigOption"]>(
+      async ({ configId, value }) => ({
+        configOptions: [
+          {
+            type: "boolean" as const,
+            id: configId,
+            name: configId,
+            category: "mode",
+            currentValue: Boolean(value),
+          },
+        ],
+      }),
+    ),
+    prompt: vi.fn<AcpClientConnection["prompt"]>(async ({ sessionId }) => {
       await this.handlers?.sessionUpdate({
         sessionId,
         update: {

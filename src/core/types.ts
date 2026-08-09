@@ -57,12 +57,7 @@ export type MaybePromise<T> = T | Promise<T>;
 
 /** Lifecycle state of the ACP client connection. */
 export type AcpConnectionStatus =
-  | "idle"
-  | "connecting"
-  | "auth-required"
-  | "ready"
-  | "error"
-  | "closed";
+  "idle" | "connecting" | "auth-required" | "ready" | "error" | "closed";
 
 /** Workspace data supplied when creating, loading, or resuming ACP sessions. */
 export type AcpWorkspace = {
@@ -93,10 +88,7 @@ export type AcpFileSystemServices = {
     signal: AbortSignal,
   ) => MaybePromise<ReadTextFileResponse>;
   /** Writes a text file after the host applies its own access policy. */
-  writeTextFile?: (
-    request: WriteTextFileRequest,
-    signal: AbortSignal,
-  ) => MaybePromise<void>;
+  writeTextFile?: (request: WriteTextFileRequest, signal: AbortSignal) => MaybePromise<void>;
 };
 
 /** Complete host terminal service required before terminal capability is advertised. */
@@ -112,10 +104,7 @@ export type AcpTerminalServices = {
     signal: AbortSignal,
   ) => MaybePromise<TerminalOutputResponse>;
   /** Releases host resources associated with a terminal. */
-  release: (
-    request: ReleaseTerminalRequest,
-    signal: AbortSignal,
-  ) => MaybePromise<void>;
+  release: (request: ReleaseTerminalRequest, signal: AbortSignal) => MaybePromise<void>;
   /** Waits for a terminal process to exit. */
   waitForExit: (
     request: WaitForTerminalExitRequest,
@@ -151,10 +140,7 @@ export type AcpClientHandlers = {
     signal: AbortSignal,
   ): MaybePromise<ReadTextFileResponse>;
   /** Handles an agent request to write a text file. */
-  writeTextFile?(
-    request: WriteTextFileRequest,
-    signal: AbortSignal,
-  ): MaybePromise<void>;
+  writeTextFile?(request: WriteTextFileRequest, signal: AbortSignal): MaybePromise<void>;
   /** Handles the complete set of agent terminal requests. */
   terminal?: AcpTerminalServices;
 };
@@ -214,7 +200,7 @@ export type AcpMessagePiece =
   | { type: "content"; content: ContentBlock; raw: SessionUpdate }
   | { type: "tool"; toolCallId: string }
   | { type: "plan"; plan: Extract<SessionUpdate, { sessionUpdate: "plan" }> }
-  | { type: "unsupported"; update: SessionUpdate | unknown };
+  | { type: "unsupported"; update: unknown };
 
 /** Protocol-authoritative message record retained in ACP session state. */
 export type AcpMessageRecord = {
@@ -262,12 +248,7 @@ export type AcpPermissionRecord = {
 };
 
 /** Lifecycle state of the current prompt turn in an ACP session. */
-export type AcpSessionRunState =
-  | "idle"
-  | "loading"
-  | "running"
-  | "cancelling"
-  | "error";
+export type AcpSessionRunState = "idle" | "loading" | "running" | "cancelling" | "error";
 
 /** Protocol-authoritative state retained for one ACP session. */
 export type AcpSessionState = {

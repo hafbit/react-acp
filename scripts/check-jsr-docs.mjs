@@ -2,11 +2,7 @@ import path from "node:path";
 import process from "node:process";
 import ts from "typescript";
 
-const entrypoints = [
-  "src/index.ts",
-  "src/core/index.ts",
-  "src/primitives/index.ts",
-];
+const entrypoints = ["src/index.ts", "src/core/index.ts", "src/primitives/index.ts"];
 
 const configPath = ts.findConfigFile(process.cwd(), ts.sys.fileExists, "tsconfig.json");
 if (!configPath) throw new Error("tsconfig.json was not found");
@@ -16,14 +12,8 @@ if (config.error) {
   throw new Error(ts.flattenDiagnosticMessageText(config.error.messageText, "\n"));
 }
 
-const parsed = ts.parseJsonConfigFileContent(
-  config.config,
-  ts.sys,
-  path.dirname(configPath),
-);
-const absoluteEntrypoints = entrypoints.map((entrypoint) =>
-  path.resolve(entrypoint),
-);
+const parsed = ts.parseJsonConfigFileContent(config.config, ts.sys, path.dirname(configPath));
+const absoluteEntrypoints = entrypoints.map((entrypoint) => path.resolve(entrypoint));
 const program = ts.createProgram(absoluteEntrypoints, {
   ...parsed.options,
   noEmit: true,
@@ -55,12 +45,8 @@ for (const [index, absoluteEntrypoint] of absoluteEntrypoints.entries()) {
     .filter((symbol) => symbol.name !== "default")
     .filter((symbol) => {
       const target =
-        symbol.flags & ts.SymbolFlags.Alias
-          ? checker.getAliasedSymbol(symbol)
-          : symbol;
-      return !ts
-        .displayPartsToString(target.getDocumentationComment(checker))
-        .trim();
+        symbol.flags & ts.SymbolFlags.Alias ? checker.getAliasedSymbol(symbol) : symbol;
+      return !ts.displayPartsToString(target.getDocumentationComment(checker)).trim();
     })
     .map((symbol) => symbol.name)
     .sort();
@@ -69,9 +55,7 @@ for (const [index, absoluteEntrypoint] of absoluteEntrypoints.entries()) {
     .getExportsOfModule(moduleSymbol)
     .filter((symbol) => symbol.name !== "default").length;
   if (undocumented.length) {
-    failures.push(
-      `${entrypoint}: undocumented exports: ${undocumented.join(", ")}`,
-    );
+    failures.push(`${entrypoint}: undocumented exports: ${undocumented.join(", ")}`);
   } else {
     console.log(`${entrypoint}: ${exportedCount}/${exportedCount} exports documented`);
   }

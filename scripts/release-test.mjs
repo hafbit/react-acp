@@ -47,13 +47,7 @@ const jsrManifest = (version = "1.2.3") => ({
     "./primitives": "./src/primitives/index.ts",
   },
   publish: {
-    include: [
-      "src/**/*.ts",
-      "src/**/*.tsx",
-      "README.md",
-      "LICENSE",
-      "package.json",
-    ],
+    include: ["src/**/*.ts", "src/**/*.tsx", "README.md", "LICENSE", "package.json"],
   },
 });
 
@@ -80,10 +74,7 @@ test("rejects missing v prefix and unsupported prereleases", () => {
 
 test("validates manifest version, repository, exports, and publish target", () => {
   assert.equal(assertReleaseManifest("1.2.3", manifest()).version, "1.2.3");
-  assert.throws(
-    () => assertReleaseManifest("1.2.4", manifest()),
-    /does not match/,
-  );
+  assert.throws(() => assertReleaseManifest("1.2.4", manifest()), /does not match/);
   assert.throws(
     () => assertReleaseManifest(undefined, { ...manifest(), repository: {} }),
     /repository.url/,
@@ -92,9 +83,7 @@ test("validates manifest version, repository, exports, and publish target", () =
 
 test("validates synchronized npm and JSR manifests", () => {
   assert.equal(assertJsrManifest("1.2.3", jsrManifest()).version, "1.2.3");
-  assert.doesNotThrow(() =>
-    assertReleaseManifests("1.2.3", manifest(), jsrManifest()),
-  );
+  assert.doesNotThrow(() => assertReleaseManifests("1.2.3", manifest(), jsrManifest()));
   assert.throws(
     () => assertReleaseManifests(undefined, manifest(), jsrManifest("1.2.4")),
     /does not match jsr.json/,
@@ -122,11 +111,7 @@ test("validates synchronized npm and JSR manifests", () => {
 });
 
 test("updates npm and JSR versions together", () => {
-  const updated = updateReleaseManifests(
-    "2.0.0-rc.1",
-    manifest(),
-    jsrManifest(),
-  );
+  const updated = updateReleaseManifests("2.0.0-rc.1", manifest(), jsrManifest());
   assert.equal(updated.npmManifest.version, "2.0.0-rc.1");
   assert.equal(updated.jsrManifest.version, "2.0.0-rc.1");
   assert.equal(updated.npmManifest.name, "@hafbit/react-acp");
@@ -169,10 +154,7 @@ test("restricts JSR repair sources and the 0.1.0 latest backfill", () => {
     throw new Error(`Unexpected git command: ${args.join(" ")}`);
   };
   assert.equal(assertJsrRepairGit("1.2.3", "v1.2.3", tagged), "abc123");
-  assert.throws(
-    () => assertJsrRepairGit("1.2.3", "latest", tagged),
-    /must be v1.2.3/,
-  );
+  assert.throws(() => assertJsrRepairGit("1.2.3", "latest", tagged), /must be v1.2.3/);
 
   const latest = (args) => {
     if (args[0] === "rev-parse" && args[1] === "HEAD") return "tip";
@@ -181,10 +163,7 @@ test("restricts JSR repair sources and the 0.1.0 latest backfill", () => {
   };
   assert.equal(assertJsrRepairGit("0.1.0", "latest", latest), "tip");
   assert.throws(
-    () =>
-      assertJsrRepairGit("0.1.0", "latest", (args) =>
-        args[1] === "HEAD" ? "old" : "tip",
-      ),
+    () => assertJsrRepairGit("0.1.0", "latest", (args) => (args[1] === "HEAD" ? "old" : "tip")),
     /tip of origin\/latest/,
   );
 });

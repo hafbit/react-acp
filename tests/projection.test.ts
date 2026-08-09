@@ -1,8 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  createAcpThreadState,
-  reduceAcpThreadState,
-} from "../src/core/state";
+import { createAcpThreadState, reduceAcpThreadState } from "../src/core/state";
 import { projectAcpThreadMessages } from "../src/core/projection";
 
 describe("ACP message projection", () => {

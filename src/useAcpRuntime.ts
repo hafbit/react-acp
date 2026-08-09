@@ -20,11 +20,7 @@ import {
 } from "./core";
 
 const useControllerState = (controller: AcpThreadController) =>
-  useSyncExternalStore(
-    controller.subscribe,
-    controller.getState,
-    controller.getState,
-  );
+  useSyncExternalStore(controller.subscribe, controller.getState, controller.getState);
 
 const choosePermissionOption = (
   extras: AcpRuntimeExtras,
@@ -34,8 +30,7 @@ const choosePermissionOption = (
   const session = extras.session;
   const request = session?.permissions[response.approvalId]?.request;
   const prefix = response.approved ? "allow" : "reject";
-  return request?.options.find((option) => option.kind.startsWith(prefix))
-    ?.optionId;
+  return request?.options.find((option) => option.kind.startsWith(prefix))?.optionId;
 };
 
 /**
@@ -66,11 +61,15 @@ export function useAcpRuntime(options: AcpRuntimeOptions): AssistantRuntime {
     ) {
       void controller.selectSession(options.threadId).catch(options.onError);
     }
-  }, [controller, options.threadId, options.onError, state.connectionStatus, state.activeSessionId]);
+  }, [
+    controller,
+    options.threadId,
+    options.onError,
+    state.connectionStatus,
+    state.activeSessionId,
+  ]);
 
-  const session = state.activeSessionId
-    ? state.sessions[state.activeSessionId]
-    : undefined;
+  const session = state.activeSessionId ? state.sessions[state.activeSessionId] : undefined;
   const extras = useMemo<AcpRuntimeExtras>(
     () => ({
       state,
@@ -97,20 +96,13 @@ export function useAcpRuntime(options: AcpRuntimeOptions): AssistantRuntime {
       },
       replyToPermission: async (toolCallId, optionId) => {
         if (!state.activeSessionId) return;
-        await controller.replyToPermission(
-          state.activeSessionId,
-          toolCallId,
-          optionId,
-        );
+        await controller.replyToPermission(state.activeSessionId, toolCallId, optionId);
       },
     }),
     [controller, session, state],
   );
 
-  const messageRepository = useMemo(
-    () => projectAcpThreadRepository(state),
-    [state],
-  );
+  const messageRepository = useMemo(() => projectAcpThreadRepository(state), [state]);
 
   const threadList = useMemo(
     () => ({
@@ -129,8 +121,7 @@ export function useAcpRuntime(options: AcpRuntimeOptions): AssistantRuntime {
       onSwitchToNewThread: async () => {
         await controller.createSession();
       },
-      onSwitchToThread: (sessionId: string) =>
-        controller.selectSession(sessionId),
+      onSwitchToThread: (sessionId: string) => controller.selectSession(sessionId),
       ...(hasAgentCapability(state.capabilities, "delete")
         ? { onDelete: (sessionId: string) => controller.deleteSession(sessionId) }
         : {}),
@@ -140,8 +131,7 @@ export function useAcpRuntime(options: AcpRuntimeOptions): AssistantRuntime {
 
   return useExternalStoreRuntime<ThreadMessage>({
     ...pickExternalStoreSharedOptions(options),
-    isLoading:
-      state.connectionStatus === "connecting" || session?.runState === "loading",
+    isLoading: state.connectionStatus === "connecting" || session?.runState === "loading",
     isDisabled:
       state.connectionStatus === "auth-required" ||
       state.connectionStatus === "error" ||
@@ -150,8 +140,7 @@ export function useAcpRuntime(options: AcpRuntimeOptions): AssistantRuntime {
       state.connectionStatus !== "ready" ||
       session?.runState === "running" ||
       session?.runState === "cancelling",
-    isRunning:
-      session?.runState === "running" || session?.runState === "cancelling",
+    isRunning: session?.runState === "running" || session?.runState === "cancelling",
     messageRepository,
     extras: acpExtras.provide(extras),
     adapters: {

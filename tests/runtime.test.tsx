@@ -4,16 +4,9 @@ import { render, screen, waitFor } from "@testing-library/react";
 import { StrictMode } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { useAcpConnection, useAcpRuntime } from "../src";
-import type {
-  AcpAdapterConnectOptions,
-  AcpClientAdapter,
-  AcpClientConnection,
-} from "../src/core";
+import type { AcpAdapterConnectOptions, AcpClientAdapter, AcpClientConnection } from "../src/core";
 
-const connectionFor = (
-  signal: AbortSignal,
-  close: () => void,
-): AcpClientConnection => ({
+const connectionFor = (signal: AbortSignal, close: () => void): AcpClientConnection => ({
   signal,
   initialize: async () => ({ protocolVersion: PROTOCOL_VERSION }),
   authenticate: async () => {},
@@ -66,9 +59,7 @@ describe("useAcpRuntime", () => {
         <Runtime />
       </StrictMode>,
     );
-    await waitFor(() =>
-      expect(screen.getByTestId("status").textContent).toBe("ready"),
-    );
+    await waitFor(() => expect(screen.getByTestId("status").textContent).toBe("ready"));
     expect(adapter.connect).toHaveBeenCalledTimes(2);
     expect(closes[0]).toHaveBeenCalled();
 

@@ -122,9 +122,7 @@ export function assertReleaseManifest(expectedVersion, manifest = readManifest()
     manifest.publishConfig?.access !== "public" ||
     manifest.publishConfig?.registry !== "https://registry.npmjs.org/"
   ) {
-    throw new Error(
-      "@hafbit/react-acp must publish publicly to https://registry.npmjs.org/.",
-    );
+    throw new Error("@hafbit/react-acp must publish publicly to https://registry.npmjs.org/.");
   }
   if (manifest.repository?.url !== repositoryUrl) {
     throw new Error(`package.json repository.url must be ${repositoryUrl}.`);
@@ -163,12 +161,7 @@ export function assertReleaseTagGit(tag, runGit = defaultGit) {
   }
   const tagCommit = runGit(["rev-list", "-n", "1", ref]);
   try {
-    runGit([
-      "merge-base",
-      "--is-ancestor",
-      tagCommit,
-      "refs/remotes/origin/latest",
-    ]);
+    runGit(["merge-base", "--is-ancestor", tagCommit, "refs/remotes/origin/latest"]);
   } catch {
     throw new Error(`${tag} must point to an ancestor of origin/latest.`);
   }
@@ -204,10 +197,7 @@ export const requiredPackedFiles = [
 ];
 
 export function assertPackedManifest(packedManifest, sourceManifest) {
-  if (
-    packedManifest.name !== packageName ||
-    packedManifest.version !== sourceManifest.version
-  ) {
+  if (packedManifest.name !== packageName || packedManifest.version !== sourceManifest.version) {
     throw new Error("Packed package name or version does not match package.json.");
   }
   assertReleaseManifest(sourceManifest.version, packedManifest);

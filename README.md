@@ -34,11 +34,7 @@ export function AcpProvider({ children }: { children: React.ReactNode }) {
     workspace: { cwd: "/absolute/project/path", mcpServers: [] },
   });
 
-  return (
-    <AssistantRuntimeProvider runtime={runtime}>
-      {children}
-    </AssistantRuntimeProvider>
-  );
+  return <AssistantRuntimeProvider runtime={runtime}>{children}</AssistantRuntimeProvider>;
 }
 ```
 
@@ -48,11 +44,11 @@ export function AcpProvider({ children }: { children: React.ReactNode }) {
 
 ## 入口与 API
 
-| 入口 | 适用场景 | 主要导出 |
-| --- | --- | --- |
-| `@hafbit/react-acp` | React 应用的常规集成 | `useAcpRuntime`、ACP hooks、常用无样式组件与公开类型 |
-| `@hafbit/react-acp/core` | 自定义宿主、transport 或状态投影 | `AcpThreadController`、`SdkAcpClientAdapter`、reducer、projector、serializer、错误和类型 |
-| `@hafbit/react-acp/primitives` | 自定义 ACP 交互界面 | 认证、权限、计划、模式、配置、命令、用量和 tool artifact 组件 |
+| 入口                           | 适用场景                         | 主要导出                                                                                 |
+| ------------------------------ | -------------------------------- | ---------------------------------------------------------------------------------------- |
+| `@hafbit/react-acp`            | React 应用的常规集成             | `useAcpRuntime`、ACP hooks、常用无样式组件与公开类型                                     |
+| `@hafbit/react-acp/core`       | 自定义宿主、transport 或状态投影 | `AcpThreadController`、`SdkAcpClientAdapter`、reducer、projector、serializer、错误和类型 |
+| `@hafbit/react-acp/primitives` | 自定义 ACP 交互界面              | 认证、权限、计划、模式、配置、命令、用量和 tool artifact 组件                            |
 
 ```tsx
 import { useAcpRuntime } from "@hafbit/react-acp";

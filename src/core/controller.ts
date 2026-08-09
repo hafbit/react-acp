@@ -8,12 +8,9 @@ import {
 } from "@agentclientprotocol/sdk";
 import type { AppendMessage } from "@assistant-ui/react";
 import { AcpCapabilityError, AcpError } from "./errors";
+import { toError } from "./internal-errors";
 import { SdkAcpClientAdapter } from "./sdk-adapter";
-import {
-  createAcpThreadState,
-  hasAgentCapability,
-  reduceAcpThreadState,
-} from "./state";
+import { createAcpThreadState, hasAgentCapability, reduceAcpThreadState } from "./state";
 import {
   buildClientCapabilities,
   buildSessionRequest,
@@ -128,8 +125,7 @@ export class AcpThreadController {
           sessionUpdate: (notification) => {
             this.dispatch({ type: "session.update", notification });
           },
-          requestPermission: (request, signal) =>
-            this.waitForPermission(request, signal),
+          requestPermission: (request, signal) => this.waitForPermission(request, signal),
           ...(services?.fileSystem?.readTextFile
             ? { readTextFile: services.fileSystem.readTextFile }
             : {}),
@@ -154,10 +150,7 @@ export class AcpThreadController {
 
       const response = await connection.initialize({
         protocolVersion: PROTOCOL_VERSION,
-        clientCapabilities: buildClientCapabilities(
-          services,
-          this.options.clientCapabilities,
-        ),
+        clientCapabilities: buildClientCapabilities(services, this.options.clientCapabilities),
         clientInfo: this.options.clientInfo ?? {
           name: "react-acp",
           version: "0.1.1",
@@ -328,10 +321,7 @@ export class AcpThreadController {
   }
 
   /** Sends one serialized ACP prompt turn and records its lifecycle. */
-  async prompt(
-    sessionId: string,
-    prompt: ContentBlock[],
-  ): Promise<PromptResponse> {
+  async prompt(sessionId: string, prompt: ContentBlock[]): Promise<PromptResponse> {
     const session = this.state.sessions[sessionId];
     if (session?.runState === "running" || session?.runState === "cancelling") {
       throw new AcpError("ACP_TURN_RUNNING", "An ACP prompt turn is already running.");
@@ -412,11 +402,7 @@ export class AcpThreadController {
     configId: string,
     value: string | boolean,
   ): Promise<void> {
-    if (
-      !this.state.sessions[sessionId]?.configOptions.some(
-        (option) => option.id === configId,
-      )
-    ) {
+    if (!this.state.sessions[sessionId]?.configOptions.some((option) => option.id === configId)) {
       throw new AcpCapabilityError("session/set_config_option");
     }
     const response = await this.requireConnection().setSessionConfigOption({
@@ -438,7 +424,9 @@ export class AcpThreadController {
 
   /** Bridges one ACP permission request to a later host reply. */
   private waitForPermission(
-    request: Parameters<NonNullable<Parameters<AcpClientAdapter["connect"]>[0]["handlers"]["requestPermission"]>>[0],
+    request: Parameters<
+      NonNullable<Parameters<AcpClientAdapter["connect"]>[0]["handlers"]["requestPermission"]>
+    >[0],
     signal: AbortSignal,
   ): Promise<RequestPermissionResponse> {
     this.dispatch({ type: "permission.requested", request });
@@ -465,7 +453,7 @@ export class AcpThreadController {
         },
         reject: (error) => {
           signal.removeEventListener("abort", abort);
-          reject(error);
+          reject(toError(error));
         },
       });
       if (signal.aborted) abort();
@@ -474,11 +462,7 @@ export class AcpThreadController {
   }
 
   /** Resolves a pending permission, or cancels it when `optionId` is omitted. */
-  async replyToPermission(
-    sessionId: string,
-    toolCallId: string,
-    optionId?: string,
-  ): Promise<void> {
+  async replyToPermission(sessionId: string, toolCallId: string, optionId?: string): Promise<void> {
     const key = `${sessionId}:${toolCallId}`;
     const waiter = this.permissionWaiters.get(key);
     if (!waiter) return;

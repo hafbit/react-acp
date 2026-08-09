@@ -23,9 +23,7 @@ export const createAcpThreadState = (): AcpThreadState => ({
 });
 
 /** Creates empty protocol-authoritative state for an ACP session ID. */
-export const createAcpSessionState = (
-  sessionId: string,
-): AcpSessionState => ({
+export const createAcpSessionState = (sessionId: string): AcpSessionState => ({
   sessionId,
   runState: "idle",
   messages: [],
@@ -53,10 +51,7 @@ const updateSession = (
   };
 };
 
-const appendMessage = (
-  session: AcpSessionState,
-  message: AcpMessageRecord,
-): AcpSessionState => ({
+const appendMessage = (session: AcpSessionState, message: AcpMessageRecord): AcpSessionState => ({
   ...session,
   messages: [...session.messages, message],
 });
@@ -72,10 +67,8 @@ const patchMessage = (
   ),
 });
 
-const localMessageId = (
-  session: AcpSessionState,
-  role: "user" | "assistant",
-) => `${session.sessionId}:turn:${session.turn}:${role}:${session.messages.length}`;
+const localMessageId = (session: AcpSessionState, role: "user" | "assistant") =>
+  `${session.sessionId}:turn:${session.turn}:${role}:${session.messages.length}`;
 
 const ensureMessage = (
   session: AcpSessionState,
@@ -109,11 +102,7 @@ const ensureMessage = (
   ];
 };
 
-const appendPiece = (
-  session: AcpSessionState,
-  messageId: string,
-  piece: AcpMessagePiece,
-) =>
+const appendPiece = (session: AcpSessionState, messageId: string, piece: AcpMessagePiece) =>
   patchMessage(session, messageId, (message) => ({
     ...message,
     pieces: [...message.pieces, piece],
@@ -124,9 +113,7 @@ const mergeTool = (
   incoming: ToolCall | ToolCallUpdate,
   messageId: string,
 ): AcpToolCallRecord => {
-  const value = existing
-    ? ({ ...existing.value, ...incoming } as ToolCall | ToolCallUpdate)
-    : incoming;
+  const value = existing ? { ...existing.value, ...incoming } : incoming;
   return {
     toolCallId: incoming.toolCallId,
     messageId,
@@ -136,21 +123,13 @@ const mergeTool = (
   };
 };
 
-const reduceUpdate = (
-  session: AcpSessionState,
-  update: SessionUpdate,
-): AcpSessionState => {
+const reduceUpdate = (session: AcpSessionState, update: SessionUpdate): AcpSessionState => {
   switch (update.sessionUpdate) {
     case "user_message_chunk":
     case "agent_message_chunk":
     case "agent_thought_chunk": {
-      const role =
-        update.sessionUpdate === "user_message_chunk" ? "user" : "assistant";
-      const [withMessage, messageId] = ensureMessage(
-        session,
-        role,
-        update.messageId,
-      );
+      const role = update.sessionUpdate === "user_message_chunk" ? "user" : "assistant";
+      const [withMessage, messageId] = ensureMessage(session, role, update.messageId);
       return appendPiece(withMessage, messageId, {
         type: "content",
         content: update.content,
@@ -160,9 +139,7 @@ const reduceUpdate = (
     case "tool_call":
     case "tool_call_update": {
       let current = session;
-      let messageId =
-        session.tools[update.toolCallId]?.messageId ??
-        session.lastAssistantMessageId;
+      let messageId = session.tools[update.toolCallId]?.messageId ?? session.lastAssistantMessageId;
       if (!messageId) {
         [current, messageId] = ensureMessage(session, "assistant");
       }
@@ -173,10 +150,7 @@ const reduceUpdate = (
       };
       const alreadyLinked = current.messages
         .find((message) => message.id === messageId)
-        ?.pieces.some(
-          (piece) =>
-            piece.type === "tool" && piece.toolCallId === update.toolCallId,
-        );
+        ?.pieces.some((piece) => piece.type === "tool" && piece.toolCallId === update.toolCallId);
       const linked = alreadyLinked
         ? current
         : appendPiece(current, messageId, {
@@ -213,9 +187,7 @@ const reduceUpdate = (
           cwd: session.info?.cwd ?? "",
           ...session.info,
           ...(update.title !== undefined ? { title: update.title } : {}),
-          ...(update.updatedAt !== undefined
-            ? { updatedAt: update.updatedAt }
-            : {}),
+          ...(update.updatedAt !== undefined ? { updatedAt: update.updatedAt } : {}),
         },
       };
     case "usage_update":
@@ -232,12 +204,8 @@ const reduceUpdate = (
   }
 };
 
-const statusFromStopReason = (
-  stopReason: StopReason,
-): AcpMessageRecord["status"] =>
-  stopReason === "end_turn"
-    ? { type: "complete", stopReason }
-    : { type: "incomplete", stopReason };
+const statusFromStopReason = (stopReason: StopReason): AcpMessageRecord["status"] =>
+  stopReason === "end_turn" ? { type: "complete", stopReason } : { type: "incomplete", stopReason };
 
 const finalizeAssistantMessage = (
   session: AcpSessionState,
@@ -256,10 +224,7 @@ const finalizeAssistantMessage = (
  * The reducer is pure apart from locally generated message timestamps and is
  * suitable for deterministic projection tests with controlled time.
  */
-export function reduceAcpThreadState(
-  state: AcpThreadState,
-  event: AcpStateEvent,
-): AcpThreadState {
+export function reduceAcpThreadState(state: AcpThreadState, event: AcpStateEvent): AcpThreadState {
   switch (event.type) {
     case "connection.status":
       return {
@@ -273,10 +238,7 @@ export function reduceAcpThreadState(
         initializeResponse: event.response,
         capabilities: event.response.agentCapabilities,
         authMethods: event.response.authMethods ?? [],
-        connectionStatus:
-          (event.response.authMethods?.length ?? 0) > 0
-            ? "auth-required"
-            : "ready",
+        connectionStatus: (event.response.authMethods?.length ?? 0) > 0 ? "auth-required" : "ready",
       };
     case "sessions.listed": {
       let next = state;
@@ -308,9 +270,7 @@ export function reduceAcpThreadState(
         ...state,
         sessions,
         sessionOrder: state.sessionOrder.filter((id) => id !== event.sessionId),
-        ...(state.activeSessionId === event.sessionId
-          ? { activeSessionId: undefined }
-          : {}),
+        ...(state.activeSessionId === event.sessionId ? { activeSessionId: undefined } : {}),
       };
     }
     case "session.loading":
@@ -350,17 +310,10 @@ export function reduceAcpThreadState(
         runState: "cancelling",
       }));
     case "session.update":
-      return updateSession(
-        state,
-        event.notification.sessionId,
-        (session) => ({
-          ...reduceUpdate(session, event.notification.update),
-          rawNotifications: [
-            ...session.rawNotifications,
-            event.notification,
-          ],
-        }),
-      );
+      return updateSession(state, event.notification.sessionId, (session) => ({
+        ...reduceUpdate(session, event.notification.update),
+        rawNotifications: [...session.rawNotifications, event.notification],
+      }));
     case "message.optimistic":
       return updateSession(state, event.sessionId, (session) =>
         appendMessage(session, event.message),
@@ -384,9 +337,7 @@ export function reduceAcpThreadState(
         const tool = mergeTool(existing, event.request.toolCall, messageId);
         const alreadyLinked = current.messages
           .find((message) => message.id === messageId)
-          ?.pieces.some(
-            (piece) => piece.type === "tool" && piece.toolCallId === toolCallId,
-          );
+          ?.pieces.some((piece) => piece.type === "tool" && piece.toolCallId === toolCallId);
         if (!alreadyLinked) {
           current = appendPiece(current, messageId, {
             type: "tool",
