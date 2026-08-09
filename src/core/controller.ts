@@ -34,6 +34,12 @@ type PermissionWaiter = {
   reject(error: unknown): void;
 };
 
+/**
+ * Owns one ACP connection and the protocol-authoritative session repository.
+ *
+ * The controller negotiates capabilities, gates optional operations, reduces
+ * protocol events, and exposes lifecycle methods used by {@link useAcpRuntime}.
+ */
 export class AcpThreadController {
   private state = createAcpThreadState();
   private readonly listeners = new Set<() => void>();
@@ -43,12 +49,15 @@ export class AcpThreadController {
   private readonly permissionWaiters = new Map<string, PermissionWaiter>();
   private disposed = false;
 
+  /** Creates a controller and validates the configured workspace paths. */
   constructor(private readonly options: AcpRuntimeOptions) {
     validateWorkspace(options.workspace);
   }
 
+  /** Returns the current immutable thread-state snapshot. */
   getState = (): AcpThreadState => this.state;
 
+  /** Subscribes to state changes and returns an unsubscribe function. */
   subscribe = (listener: () => void): (() => void) => {
     this.listeners.add(listener);
     return () => {
@@ -56,15 +65,18 @@ export class AcpThreadController {
     };
   };
 
+  /** Reduces an event and notifies state subscribers. */
   private dispatch(event: AcpStateEvent): void {
     this.state = reduceAcpThreadState(this.state, event);
     for (const listener of this.listeners) listener();
   }
 
+  /** Reports an asynchronous controller failure to the host callback. */
   private reportError(error: unknown): void {
     this.options.onError?.(error);
   }
 
+  /** Resolves the configured adapter or creates the default SDK adapter. */
   private get adapter(): AcpClientAdapter {
     return this.options.connection.type === "adapter"
       ? this.options.connection.adapter
@@ -74,6 +86,7 @@ export class AcpThreadController {
         );
   }
 
+  /** Opens and initializes the ACP connection; concurrent calls share one attempt. */
   async connect(): Promise<void> {
     if (this.disposed) throw new AcpError("ACP_DISPOSED", "Controller disposed");
     if (this.connection && !this.connection.signal.aborted) return;
@@ -100,6 +113,7 @@ export class AcpThreadController {
     return this.connectPromise;
   }
 
+  /** Performs one ACP transport and initialization attempt. */
   private async doConnect(): Promise<void> {
     this.abortController?.abort();
     const abortController = new AbortController();
@@ -146,7 +160,7 @@ export class AcpThreadController {
         ),
         clientInfo: this.options.clientInfo ?? {
           name: "react-acp",
-          version: "0.1.0",
+          version: "0.1.1",
         },
       });
       if (abortController.signal.aborted) {
@@ -172,12 +186,14 @@ export class AcpThreadController {
     }
   }
 
+  /** Closes the current connection and starts a fresh initialization. */
   async reconnect(): Promise<void> {
     this.connection?.close();
     this.connection = undefined;
     await this.connect();
   }
 
+  /** Authenticates with an advertised method and completes session setup. */
   async authenticate(methodId: string): Promise<void> {
     const connection = this.requireConnection();
     await connection.authenticate(methodId);
@@ -185,6 +201,7 @@ export class AcpThreadController {
     await this.afterAuthentication();
   }
 
+  /** Logs out when the agent advertises the ACP logout capability. */
   async logout(): Promise<void> {
     if (!hasAgentCapability(this.state.capabilities, "logout")) {
       throw new AcpCapabilityError("logout");
@@ -196,6 +213,7 @@ export class AcpThreadController {
     });
   }
 
+  /** Refreshes sessions and applies a controlled session after authentication. */
   private async afterAuthentication(): Promise<void> {
     if (hasAgentCapability(this.state.capabilities, "list")) {
       await this.refreshSessions();
@@ -203,6 +221,7 @@ export class AcpThreadController {
     if (this.options.threadId) await this.selectSession(this.options.threadId);
   }
 
+  /** Loads every page of the agent's session list into local state. */
   async refreshSessions(): Promise<void> {
     const connection = this.requireConnection();
     const sessions: SessionInfo[] = [];
@@ -217,6 +236,7 @@ export class AcpThreadController {
     this.dispatch({ type: "sessions.listed", sessions });
   }
 
+  /** Creates, selects, and returns a new ACP session ID. */
   async createSession(): Promise<string> {
     const base = buildSessionRequest(this.options.workspace, this.state.capabilities);
     const response = await this.requireConnection().newSession(base);
@@ -230,6 +250,7 @@ export class AcpThreadController {
     return response.sessionId;
   }
 
+  /** Selects a known session and loads or resumes it when necessary. */
   async selectSession(sessionId: string): Promise<void> {
     if (this.state.activeSessionId === sessionId) return;
     const connection = this.requireConnection();
@@ -272,6 +293,7 @@ export class AcpThreadController {
     this.options.onThreadIdChange?.(sessionId);
   }
 
+  /** Permanently deletes a session when the agent advertises support. */
   async deleteSession(sessionId: string): Promise<void> {
     if (!hasAgentCapability(this.state.capabilities, "delete")) {
       throw new AcpCapabilityError("session/delete");
@@ -280,6 +302,7 @@ export class AcpThreadController {
     this.dispatch({ type: "session.deleted", sessionId });
   }
 
+  /** Explicitly resumes a session when the agent advertises support. */
   async resumeSession(sessionId: string): Promise<void> {
     if (!hasAgentCapability(this.state.capabilities, "resume")) {
       throw new AcpCapabilityError("session/resume");
@@ -296,6 +319,7 @@ export class AcpThreadController {
     });
   }
 
+  /** Closes a session without deleting it when the agent advertises support. */
   async closeSession(sessionId: string): Promise<void> {
     if (!hasAgentCapability(this.state.capabilities, "close")) {
       throw new AcpCapabilityError("session/close");
@@ -303,6 +327,7 @@ export class AcpThreadController {
     await this.requireConnection().closeSession(sessionId);
   }
 
+  /** Sends one serialized ACP prompt turn and records its lifecycle. */
   async prompt(
     sessionId: string,
     prompt: ContentBlock[],
@@ -323,6 +348,7 @@ export class AcpThreadController {
     }
   }
 
+  /** Serializes and sends an assistant-ui user message with optimistic projection. */
   async sendMessage(message: AppendMessage): Promise<void> {
     const sessionId = this.state.activeSessionId ?? (await this.createSession());
     const prompt = serializeAppendMessage(message, this.state.capabilities);
@@ -359,6 +385,7 @@ export class AcpThreadController {
     }
   }
 
+  /** Cancels pending permissions and the active prompt turn for a session. */
   async cancel(sessionId: string): Promise<void> {
     this.dispatch({ type: "session.cancel_started", sessionId });
     for (const [toolCallId, permission] of Object.entries(
@@ -371,6 +398,7 @@ export class AcpThreadController {
     await this.requireConnection().cancel(sessionId);
   }
 
+  /** Changes a session mode when modes were advertised by the agent. */
   async setMode(sessionId: string, modeId: string): Promise<void> {
     if (!this.state.sessions[sessionId]?.modes) {
       throw new AcpCapabilityError("session/set_mode");
@@ -378,6 +406,7 @@ export class AcpThreadController {
     await this.requireConnection().setSessionMode({ sessionId, modeId });
   }
 
+  /** Changes an advertised session configuration option. */
   async setConfigOption(
     sessionId: string,
     configId: string,
@@ -407,6 +436,7 @@ export class AcpThreadController {
     });
   }
 
+  /** Bridges one ACP permission request to a later host reply. */
   private waitForPermission(
     request: Parameters<NonNullable<Parameters<AcpClientAdapter["connect"]>[0]["handlers"]["requestPermission"]>>[0],
     signal: AbortSignal,
@@ -443,6 +473,7 @@ export class AcpThreadController {
     });
   }
 
+  /** Resolves a pending permission, or cancels it when `optionId` is omitted. */
   async replyToPermission(
     sessionId: string,
     toolCallId: string,
@@ -464,6 +495,7 @@ export class AcpThreadController {
     waiter.resolve(response);
   }
 
+  /** Permanently disposes the controller and rejects pending permission requests. */
   dispose(): void {
     this.disposed = true;
     this.abortController?.abort(new AcpError("ACP_DISPOSED", "Controller disposed"));
@@ -475,6 +507,7 @@ export class AcpThreadController {
     this.listeners.clear();
   }
 
+  /** Disconnects the current transport while allowing a later reconnect. */
   disconnect(): void {
     this.abortController?.abort();
     this.connection?.close();
@@ -485,6 +518,7 @@ export class AcpThreadController {
     this.permissionWaiters.clear();
   }
 
+  /** Returns the live connection or throws a structured lifecycle error. */
   private requireConnection(): AcpClientConnection {
     if (!this.connection || this.connection.signal.aborted) {
       throw new AcpError("ACP_NOT_CONNECTED", "ACP is not connected.");

@@ -1,3 +1,10 @@
+/**
+ * React bindings for projecting Agent Client Protocol sessions into an
+ * assistant-ui runtime, including ACP-aware hooks and unstyled primitives.
+ *
+ * @module
+ */
+
 export { useAcpRuntime } from "./useAcpRuntime";
 export {
   useAcpAuth,

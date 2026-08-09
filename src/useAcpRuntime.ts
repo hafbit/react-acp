@@ -38,6 +38,17 @@ const choosePermissionOption = (
     ?.optionId;
 };
 
+/**
+ * Creates an assistant-ui runtime backed by an ACP v1 connection.
+ *
+ * The hook connects on mount, projects ACP sessions as assistant-ui threads,
+ * and disconnects on unmount. The ACP session remains the authoritative source
+ * for messages, tools, permissions, plans, modes, configuration, and usage.
+ *
+ * @param options Connection, workspace, client-service, and assistant-ui options.
+ * @returns An assistant-ui runtime suitable for `AssistantRuntimeProvider`.
+ * @throws {AcpError} When the workspace or ACP connection is invalid.
+ */
 export function useAcpRuntime(options: AcpRuntimeOptions): AssistantRuntime {
   const [controller] = useState(() => new AcpThreadController(options));
   const state = useControllerState(controller);

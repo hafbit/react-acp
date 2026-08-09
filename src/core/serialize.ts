@@ -16,6 +16,7 @@ import type {
   AcpWorkspace,
 } from "./types";
 
+/** Returns whether every terminal operation required by ACP is implemented. */
 export const hasCompleteTerminalServices = (
   terminal: AcpTerminalServices | undefined,
 ): terminal is AcpTerminalServices =>
@@ -33,6 +34,10 @@ const isAbsolutePath = (value: string) =>
   /^[A-Za-z]:[\\/]/.test(value) ||
   value.startsWith("\\\\");
 
+/**
+ * Validates that the workspace and additional directories use absolute paths.
+ * @throws {AcpInvalidWorkspaceError} When any path is relative.
+ */
 export function validateWorkspace(workspace: AcpWorkspace): void {
   for (const path of [workspace.cwd, ...(workspace.additionalDirectories ?? [])]) {
     if (!isAbsolutePath(path)) throw new AcpInvalidWorkspaceError(path);
@@ -44,6 +49,7 @@ export function validateWorkspace(workspace: AcpWorkspace): void {
   }
 }
 
+/** Builds advertised ACP client capabilities from host services and overrides. */
 export function buildClientCapabilities(
   services: AcpClientServices | undefined,
   additions: ClientCapabilities | undefined,
@@ -66,6 +72,7 @@ export function buildClientCapabilities(
   };
 }
 
+/** Builds the workspace portion of ACP new, load, and resume requests. */
 export function buildSessionRequest(
   workspace: AcpWorkspace,
   capabilities?: AgentCapabilities,
@@ -86,7 +93,7 @@ export function buildSessionRequest(
     if (server.type === "acp") {
       throw new AcpCapabilityError(
         "MCP ACP transport",
-        "The ACP MCP transport is UNSTABLE and is not enabled by react-acp 0.1.0.",
+        "The ACP MCP transport is UNSTABLE and is not enabled by react-acp 0.1.1.",
       );
     }
   }
@@ -192,6 +199,10 @@ function serializePart(
   }
 }
 
+/**
+ * Serializes one assistant-ui user append into ACP prompt content blocks.
+ * @throws {AcpUnsupportedContentError} When role, content, or capability is unsupported.
+ */
 export function serializeAppendMessage(
   message: AppendMessage,
   capabilities: AgentCapabilities | undefined,

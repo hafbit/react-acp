@@ -251,6 +251,7 @@ const projectMessage = (
   };
 };
 
+/** Projects one ACP session into assistant-ui thread messages. */
 export function projectAcpThreadMessages(
   state: AcpThreadState,
   sessionId = state.activeSessionId,
@@ -261,6 +262,7 @@ export function projectAcpThreadMessages(
   return session.messages.map((message) => projectMessage(session, message));
 }
 
+/** Projects all ACP sessions into an assistant-ui exported message repository. */
 export function projectAcpThreadRepository(
   state: AcpThreadState,
   sessionId = state.activeSessionId,

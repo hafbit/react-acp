@@ -18,6 +18,10 @@ import {
 
 type DivProps = ComponentPropsWithoutRef<"div">;
 
+/**
+ * Renders advertised authentication methods as buttons.
+ * Returns `null` when authentication is not required.
+ */
 export function AcpAuthMethods({
   children,
   ...props
@@ -40,6 +44,10 @@ export function AcpAuthMethods({
   );
 }
 
+/**
+ * Renders pending ACP tool-permission options for the active session.
+ * Returns `null` when no permission is pending.
+ */
 export function AcpPermissionList({
   children,
   ...props
@@ -75,6 +83,7 @@ export function AcpPermissionList({
   );
 }
 
+/** Renders the latest ACP plan as an ordered list, or `null` when absent. */
 export function AcpPlan({ children, ...props }: DivProps): ReactElement | null {
   const plan = useAcpPlan();
   if (!plan) return null;
@@ -96,6 +105,7 @@ export function AcpPlan({ children, ...props }: DivProps): ReactElement | null {
   );
 }
 
+/** Renders the active session's advertised modes as an unstyled select. */
 export function AcpModeSelect(
   props: Omit<ComponentPropsWithoutRef<"select">, "value" | "onChange">,
 ): ReactElement | null {
@@ -117,6 +127,7 @@ export function AcpModeSelect(
   );
 }
 
+/** Renders advertised boolean and select configuration options for the session. */
 export function AcpConfigOptions({
   children,
   ...props
@@ -168,6 +179,7 @@ export function AcpConfigOptions({
   );
 }
 
+/** Renders advertised slash commands and reports the selected prompt text. */
 export function AcpCommandMenu({
   onSelect,
   children,
@@ -192,6 +204,7 @@ export function AcpCommandMenu({
   );
 }
 
+/** Renders the latest ACP usage update with an optional custom render function. */
 export function AcpUsage({
   render,
   ...props
@@ -224,6 +237,7 @@ type AcpArtifact = {
   };
 };
 
+/** Renders the ACP metadata retained on an assistant-ui tool-call artifact. */
 export function AcpToolArtifact({
   artifact,
   ...props
@@ -240,6 +254,7 @@ export function AcpToolArtifact({
   );
 }
 
+/** Renders an ACP data part as readable JSON with a stable data attribute. */
 export function AcpDataPart({
   name,
   data,
