@@ -8,6 +8,7 @@ import {
   assertPackedManifest,
   assertReleaseManifest,
   assertReleaseManifests,
+  assertReleaseArtifacts,
   assertReleaseTagGit,
   parseReleaseTag,
   parseReleaseVersion,
@@ -116,6 +117,15 @@ test("updates npm and JSR versions together", () => {
   assert.equal(updated.jsrManifest.version, "2.0.0-rc.1");
   assert.equal(updated.npmManifest.name, "@hafbit/react-acp");
   assert.equal(updated.jsrManifest.exports["./core"], "./src/core/index.ts");
+  assert.equal(updated.sourceVersion, "2.0.0-rc.1");
+});
+
+test("validates the source client version with both manifests", () => {
+  assert.doesNotThrow(() => assertReleaseArtifacts("1.2.3", manifest(), jsrManifest(), "1.2.3"));
+  assert.throws(
+    () => assertReleaseArtifacts("1.2.3", manifest(), jsrManifest(), "1.2.2"),
+    /Source version 1.2.2/,
+  );
 });
 
 test("rejects dirty worktrees", () => {

@@ -245,6 +245,7 @@ export function AcpDataPart({
   );
 }
 
+/** Renders a protocol or tool diff value without applying visual styling. */
 export function AcpDiff({ diff, ...props }: DivProps & { diff: unknown }): ReactElement {
   return (
     <div {...props} data-acp-part="diff">
@@ -253,6 +254,7 @@ export function AcpDiff({ diff, ...props }: DivProps & { diff: unknown }): React
   );
 }
 
+/** Renders retained ACP terminal data as readable JSON. */
 export function AcpTerminal({
   terminal,
   ...props
@@ -271,6 +273,7 @@ type ResourceLike = {
   title?: string | null;
 };
 
+/** Renders an ACP resource link or retained resource value. */
 export function AcpResource({
   resource,
   ...props
@@ -290,6 +293,7 @@ export function AcpResource({
   );
 }
 
+/** Renders a forward-compatible ACP value not interpreted by this package. */
 export function AcpUnsupported({ value, ...props }: DivProps & { value: unknown }): ReactElement {
   return (
     <div {...props} data-acp-part="unsupported">

@@ -1,6 +1,6 @@
 {
   "name": "@hafbit/react-acp",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Transport-agnostic ACP v1 runtime adapter for assistant-ui, with React hooks and headless primitives.",
   "repository": {
     "type": "git",

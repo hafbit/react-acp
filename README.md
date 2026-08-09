@@ -2,7 +2,7 @@
 
 `react-acp` 将 [Agent Client Protocol (ACP)](https://agentclientprotocol.com/) 会话投影为 [assistant-ui](https://www.assistant-ui.com/) runtime。ACP session 是线程权威来源；消息、推理、工具调用、权限、计划、模式、配置与用量由协议事件驱动。
 
-> 当前状态：`0.1.1` 开发版。兼容承诺覆盖官方 TypeScript SDK 标记为稳定的 ACP v1 API；实验 API 与 ACP v2 Draft 不在承诺范围内。
+> 当前状态：`0.1.2` 开发版。兼容承诺覆盖官方 TypeScript SDK 标记为稳定的 ACP v1 API；实验 API 与 ACP v2 Draft 不在承诺范围内。
 
 ## 安装
 
@@ -42,13 +42,27 @@ export function AcpProvider({ children }: { children: React.ReactNode }) {
 
 高层 adapter、纯 reducer/projector 和结构化错误从 `@hafbit/react-acp/core` 导出；认证、计划、模式、配置、命令、权限和 ACP artifact 的无样式组件从 `@hafbit/react-acp/primitives` 导出。主入口同时提供对应 hooks。
 
+`connection`、`workspace`、`clientServices`、`clientCapabilities` 和 `clientInfo` 是 Provider 的身份配置。切换 Agent 或 Workspace 时用 React `key` 重建 Provider；`threadId` 是标准受控属性，`onError`、`onThreadIdChange` 等回调可动态更新：
+
+```tsx
+function AgentRuntime({ agent, workspace, children }: Props) {
+  return (
+    <AcpProvider key={`${agent.id}:${workspace.cwd}`} agent={agent} workspace={workspace}>
+      {children}
+    </AcpProvider>
+  );
+}
+```
+
+`useAcpRuntimeExtras()` 提供 `reconnect`、完整分页的 `refreshSessions` 和 session 生命周期方法。消息 metadata 只保留该消息自己的完整 ACP notifications；session 最新状态、工具通知和未知扩展通过 extras 中的公开 core state 读取。
+
 ## 入口与 API
 
 | 入口                           | 适用场景                         | 主要导出                                                                                 |
 | ------------------------------ | -------------------------------- | ---------------------------------------------------------------------------------------- |
 | `@hafbit/react-acp`            | React 应用的常规集成             | `useAcpRuntime`、ACP hooks、常用无样式组件与公开类型                                     |
 | `@hafbit/react-acp/core`       | 自定义宿主、transport 或状态投影 | `AcpThreadController`、`SdkAcpClientAdapter`、reducer、projector、serializer、错误和类型 |
-| `@hafbit/react-acp/primitives` | 自定义 ACP 交互界面              | 认证、权限、计划、模式、配置、命令、用量和 tool artifact 组件                            |
+| `@hafbit/react-acp/primitives` | 自定义 ACP 交互界面              | 认证、权限、计划、模式、配置、命令、用量、Diff、Terminal、Resource 和 Unsupported 组件   |
 
 ```tsx
 import { useAcpRuntime } from "@hafbit/react-acp";

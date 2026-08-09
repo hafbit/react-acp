@@ -1,6 +1,6 @@
 import type {
   AgentCapabilities,
-  SessionUpdate,
+  SessionNotification,
   StopReason,
   ToolCall,
   ToolCallUpdate,
@@ -32,8 +32,8 @@ export const createAcpSessionState = (sessionId: string): AcpSessionState => ({
   commands: [],
   configOptions: [],
   turn: 0,
-  unhandledEvents: [],
-  rawNotifications: [],
+  latestNotifications: {},
+  unhandledNotifications: [],
 });
 
 const updateSession = (
@@ -76,9 +76,12 @@ const ensureMessage = (
   protocolMessageId?: string | null,
 ): [AcpSessionState, string] => {
   const exactId = protocolMessageId ?? undefined;
-  if (exactId && session.messages.some((message) => message.id === exactId)) {
-    return [session, exactId];
-  }
+  const exactMessage = exactId
+    ? session.messages.find(
+        (message) => message.id === exactId || message.protocolMessageId === exactId,
+      )
+    : undefined;
+  if (exactMessage) return [session, exactMessage.id];
 
   if (!exactId && session.lastChunk?.role === role) {
     return [session, session.lastChunk.messageId];
@@ -87,9 +90,11 @@ const ensureMessage = (
   const messageId = exactId ?? localMessageId(session, role);
   const next = appendMessage(session, {
     id: messageId,
+    ...(exactId ? { protocolMessageId: exactId } : {}),
     role,
     createdAt: Date.now(),
     pieces: [],
+    rawNotifications: [],
     ...(role === "assistant" ? { status: { type: "running" } } : {}),
   });
   return [
@@ -108,10 +113,21 @@ const appendPiece = (session: AcpSessionState, messageId: string, piece: AcpMess
     pieces: [...message.pieces, piece],
   }));
 
+const appendMessageNotification = (
+  session: AcpSessionState,
+  messageId: string,
+  notification: SessionNotification,
+) =>
+  patchMessage(session, messageId, (message) => ({
+    ...message,
+    rawNotifications: [...message.rawNotifications, notification],
+  }));
+
 const mergeTool = (
   existing: AcpToolCallRecord | undefined,
   incoming: ToolCall | ToolCallUpdate,
   messageId: string,
+  notification?: SessionNotification,
 ): AcpToolCallRecord => {
   const value = existing ? { ...existing.value, ...incoming } : incoming;
   return {
@@ -119,86 +135,117 @@ const mergeTool = (
     messageId,
     value,
     ...(existing?.permission ? { permission: existing.permission } : {}),
-    rawUpdates: [...(existing?.rawUpdates ?? []), incoming],
+    rawNotifications: notification
+      ? [...(existing?.rawNotifications ?? []), notification]
+      : (existing?.rawNotifications ?? []),
   };
 };
 
-const reduceUpdate = (session: AcpSessionState, update: SessionUpdate): AcpSessionState => {
+const recordLatestNotification = (
+  session: AcpSessionState,
+  notification: SessionNotification,
+): AcpSessionState => ({
+  ...session,
+  latestNotifications: {
+    ...session.latestNotifications,
+    [notification.update.sessionUpdate]: notification,
+  },
+});
+
+const reduceNotification = (
+  session: AcpSessionState,
+  notification: SessionNotification,
+): AcpSessionState => {
+  const update = notification.update;
   switch (update.sessionUpdate) {
     case "user_message_chunk":
     case "agent_message_chunk":
     case "agent_thought_chunk": {
       const role = update.sessionUpdate === "user_message_chunk" ? "user" : "assistant";
       const [withMessage, messageId] = ensureMessage(session, role, update.messageId);
-      return appendPiece(withMessage, messageId, {
+      const withPiece = appendPiece(withMessage, messageId, {
         type: "content",
         content: update.content,
-        raw: update,
+        notification,
       });
+      return appendMessageNotification(withPiece, messageId, notification);
     }
     case "tool_call":
     case "tool_call_update": {
       let current = session;
       let messageId = session.tools[update.toolCallId]?.messageId ?? session.lastAssistantMessageId;
-      if (!messageId) {
-        [current, messageId] = ensureMessage(session, "assistant");
-      }
-      const exists = current.tools[update.toolCallId];
+      if (!messageId) [current, messageId] = ensureMessage(session, "assistant");
+      const existing = current.tools[update.toolCallId];
       const nextTools = {
         ...current.tools,
-        [update.toolCallId]: mergeTool(exists, update, messageId),
+        [update.toolCallId]: mergeTool(existing, update, messageId, notification),
       };
       const alreadyLinked = current.messages
         .find((message) => message.id === messageId)
         ?.pieces.some((piece) => piece.type === "tool" && piece.toolCallId === update.toolCallId);
       const linked = alreadyLinked
         ? current
-        : appendPiece(current, messageId, {
-            type: "tool",
-            toolCallId: update.toolCallId,
-          });
+        : appendPiece(current, messageId, { type: "tool", toolCallId: update.toolCallId });
       return { ...linked, tools: nextTools, lastAssistantMessageId: messageId };
     }
     case "plan": {
       let current = session;
       let messageId = session.lastAssistantMessageId;
       if (!messageId) [current, messageId] = ensureMessage(session, "assistant");
-      return {
-        ...appendPiece(current, messageId, { type: "plan", plan: update }),
+      const withPlan = appendPiece(current, messageId, {
+        type: "plan",
         plan: update,
-      };
+        notification,
+      });
+      return recordLatestNotification(
+        appendMessageNotification({ ...withPlan, plan: update }, messageId, notification),
+        notification,
+      );
     }
     case "available_commands_update":
-      return { ...session, commands: update.availableCommands };
+      return recordLatestNotification(
+        { ...session, commands: update.availableCommands },
+        notification,
+      );
     case "current_mode_update":
-      return session.modes
-        ? {
-            ...session,
-            modes: { ...session.modes, currentModeId: update.currentModeId },
-          }
-        : session;
+      return recordLatestNotification(
+        session.modes
+          ? { ...session, modes: { ...session.modes, currentModeId: update.currentModeId } }
+          : session,
+        notification,
+      );
     case "config_option_update":
-      return { ...session, configOptions: update.configOptions };
+      return recordLatestNotification(
+        { ...session, configOptions: update.configOptions },
+        notification,
+      );
     case "session_info_update":
-      return {
-        ...session,
-        info: {
-          sessionId: session.sessionId,
-          cwd: session.info?.cwd ?? "",
-          ...session.info,
-          ...(update.title !== undefined ? { title: update.title } : {}),
-          ...(update.updatedAt !== undefined ? { updatedAt: update.updatedAt } : {}),
+      return recordLatestNotification(
+        {
+          ...session,
+          info: {
+            sessionId: session.sessionId,
+            cwd: session.info?.cwd ?? "",
+            ...session.info,
+            ...(update.title !== undefined ? { title: update.title ?? undefined } : {}),
+            ...(update.updatedAt !== undefined ? { updatedAt: update.updatedAt ?? undefined } : {}),
+          },
         },
-      };
+        notification,
+      );
     case "usage_update":
-      return { ...session, usage: update };
+      return recordLatestNotification({ ...session, usage: update }, notification);
     default: {
       let current = session;
       let messageId = session.lastAssistantMessageId;
       if (!messageId) [current, messageId] = ensureMessage(session, "assistant");
+      const withUnsupported = appendPiece(current, messageId, {
+        type: "unsupported",
+        notification,
+      });
       return {
-        ...appendPiece(current, messageId, { type: "unsupported", update }),
-        unhandledEvents: [...current.unhandledEvents, update],
+        ...appendMessageNotification(withUnsupported, messageId, notification),
+        unhandledNotifications: [...current.unhandledNotifications, notification],
       };
     }
   }
@@ -218,12 +265,7 @@ const finalizeAssistantMessage = (
   }));
 };
 
-/**
- * Applies one connection, session, message, tool, or permission event.
- *
- * The reducer is pure apart from locally generated message timestamps and is
- * suitable for deterministic projection tests with controlled time.
- */
+/** Applies one connection, session, message, tool, or permission event. */
 export function reduceAcpThreadState(state: AcpThreadState, event: AcpStateEvent): AcpThreadState {
   switch (event.type) {
     case "connection.status":
@@ -241,26 +283,33 @@ export function reduceAcpThreadState(state: AcpThreadState, event: AcpStateEvent
         connectionStatus: (event.response.authMethods?.length ?? 0) > 0 ? "auth-required" : "ready",
       };
     case "sessions.listed": {
-      let next = state;
+      const sessions: Record<string, AcpSessionState> = {};
       for (const info of event.sessions) {
-        next = updateSession(next, info.sessionId, (session) => ({
-          ...session,
+        sessions[info.sessionId] = {
+          ...(state.sessions[info.sessionId] ?? createAcpSessionState(info.sessionId)),
           info,
-        }));
+        };
       }
-      return next;
-    }
-    case "session.opened":
+      const active = state.activeSessionId;
+      if (active && !sessions[active] && state.sessions[active])
+        sessions[active] = state.sessions[active];
+      const listedOrder = event.sessions.map((info) => info.sessionId);
       return {
-        ...updateSession(state, event.sessionId, (session) => ({
-          ...session,
-          ...(event.info ? { info: event.info } : {}),
-          ...(event.modes !== undefined ? { modes: event.modes } : {}),
-          configOptions: event.configOptions ?? session.configOptions,
-          runState: event.loading ? "loading" : "idle",
-        })),
-        activeSessionId: event.sessionId,
+        ...state,
+        sessions,
+        sessionOrder:
+          active && !listedOrder.includes(active) ? [...listedOrder, active] : listedOrder,
       };
+    }
+    case "session.attached":
+      return updateSession(state, event.sessionId, (session) => ({
+        ...session,
+        ...(event.info ? { info: event.info } : {}),
+        ...(event.modes !== undefined ? { modes: event.modes } : {}),
+        configOptions: event.configOptions ?? session.configOptions,
+        runState: "idle",
+        error: undefined,
+      }));
     case "session.selected":
       return { ...state, activeSessionId: event.sessionId };
     case "session.deleted": {
@@ -275,14 +324,33 @@ export function reduceAcpThreadState(state: AcpThreadState, event: AcpStateEvent
     }
     case "session.loading":
       return updateSession(state, event.sessionId, (session) => ({
-        ...createAcpSessionState(event.sessionId),
-        info: session.info,
+        ...(event.clearHistory
+          ? { ...createAcpSessionState(event.sessionId), info: session.info }
+          : session),
         runState: "loading",
+        error: undefined,
       }));
-    case "session.loaded":
+    case "session.restored":
+      return updateSession(state, event.session.sessionId, () => ({
+        ...event.session,
+        ...(event.error !== undefined ? { runState: "error", error: event.error } : {}),
+      }));
+    case "session.attach_failed":
+      return updateSession(state, event.sessionId, (session) => ({
+        ...session,
+        runState: "error",
+        error: event.error,
+      }));
+    case "session.closed":
       return updateSession(state, event.sessionId, (session) => ({
         ...session,
         runState: "idle",
+        error: undefined,
+      }));
+    case "session.config_options":
+      return updateSession(state, event.sessionId, (session) => ({
+        ...session,
+        configOptions: event.configOptions,
       }));
     case "session.prompt_started":
       return updateSession(state, event.sessionId, (session) => ({
@@ -298,10 +366,10 @@ export function reduceAcpThreadState(state: AcpThreadState, event: AcpStateEvent
         runState: "idle",
         lastChunk: undefined,
       }));
-    case "session.failed":
+    case "session.turn_failed":
       return updateSession(state, event.sessionId, (session) => ({
         ...session,
-        runState: "error",
+        runState: "idle",
         error: event.error,
       }));
     case "session.cancel_started":
@@ -310,10 +378,9 @@ export function reduceAcpThreadState(state: AcpThreadState, event: AcpStateEvent
         runState: "cancelling",
       }));
     case "session.update":
-      return updateSession(state, event.notification.sessionId, (session) => ({
-        ...reduceUpdate(session, event.notification.update),
-        rawNotifications: [...session.rawNotifications, event.notification],
-      }));
+      return updateSession(state, event.notification.sessionId, (session) =>
+        reduceNotification(session, event.notification),
+      );
     case "message.optimistic":
       return updateSession(state, event.sessionId, (session) =>
         appendMessage(session, event.message),
@@ -324,6 +391,15 @@ export function reduceAcpThreadState(state: AcpThreadState, event: AcpStateEvent
           ...message,
           error: event.error,
           optimistic: false,
+        })),
+      );
+    case "message.optimistic_confirmed":
+      return updateSession(state, event.sessionId, (session) =>
+        patchMessage(session, event.messageId, (message) => ({
+          ...message,
+          optimistic: false,
+          ...(event.protocolMessageId ? { protocolMessageId: event.protocolMessageId } : {}),
+          rawNotifications: [...message.rawNotifications, ...(event.notifications ?? [])],
         })),
       );
     case "permission.requested":
@@ -338,22 +414,11 @@ export function reduceAcpThreadState(state: AcpThreadState, event: AcpStateEvent
         const alreadyLinked = current.messages
           .find((message) => message.id === messageId)
           ?.pieces.some((piece) => piece.type === "tool" && piece.toolCallId === toolCallId);
-        if (!alreadyLinked) {
-          current = appendPiece(current, messageId, {
-            type: "tool",
-            toolCallId,
-          });
-        }
+        if (!alreadyLinked) current = appendPiece(current, messageId, { type: "tool", toolCallId });
         return {
           ...current,
-          permissions: {
-            ...current.permissions,
-            [toolCallId]: record,
-          },
-          tools: {
-            ...current.tools,
-            [toolCallId]: { ...tool, permission: record },
-          },
+          permissions: { ...current.permissions, [toolCallId]: record },
+          tools: { ...current.tools, [toolCallId]: { ...tool, permission: record } },
           lastAssistantMessageId: messageId,
         };
       });
@@ -372,15 +437,9 @@ export function reduceAcpThreadState(state: AcpThreadState, event: AcpStateEvent
         const tool = session.tools[event.toolCallId];
         return {
           ...session,
-          permissions: {
-            ...session.permissions,
-            [event.toolCallId]: permission,
-          },
+          permissions: { ...session.permissions, [event.toolCallId]: permission },
           tools: tool
-            ? {
-                ...session.tools,
-                [event.toolCallId]: { ...tool, permission },
-              }
+            ? { ...session.tools, [event.toolCallId]: { ...tool, permission } }
             : session.tools,
         };
       });

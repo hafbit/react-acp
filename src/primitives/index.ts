@@ -10,9 +10,13 @@ export {
   AcpCommandMenu,
   AcpConfigOptions,
   AcpDataPart,
+  AcpDiff,
   AcpModeSelect,
   AcpPermissionList,
   AcpPlan,
+  AcpResource,
+  AcpTerminal,
   AcpToolArtifact,
+  AcpUnsupported,
   AcpUsage,
 } from "./primitives";

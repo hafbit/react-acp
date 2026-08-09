@@ -7,11 +7,19 @@ import type {
 
 export class MockAcpAdapter implements AcpClientAdapter {
   private sequence = 2;
+  private connectionSequence = 0;
   private handlers?: AcpAdapterConnectOptions["handlers"];
+  private lifecycle?: AbortController;
+
+  dropConnection(): void {
+    this.lifecycle?.abort(new Error("mock transport dropped"));
+  }
 
   async connect(options: AcpAdapterConnectOptions): Promise<AcpClientConnection> {
     this.handlers = options.handlers;
     const lifecycle = new AbortController();
+    this.lifecycle = lifecycle;
+    const connectionId = ++this.connectionSequence;
     options.signal.addEventListener("abort", () => lifecycle.abort(), { once: true });
 
     return {
@@ -30,16 +38,20 @@ export class MockAcpAdapter implements AcpClientAdapter {
         sessions: [
           { sessionId: "demo-1", cwd: "/mock", title: "First session" },
           { sessionId: "demo-2", cwd: "/mock", title: "Second session" },
+          { sessionId: "demo-slow", cwd: "/mock", title: "Slow session" },
+          { sessionId: "demo-fast", cwd: "/mock", title: "Fast session" },
         ],
       }),
       newSession: async () => ({ sessionId: `demo-${++this.sequence}` }),
       loadSession: async ({ sessionId }) => {
+        if (sessionId === "demo-slow") await new Promise((resolve) => setTimeout(resolve, 150));
+        if (sessionId === "demo-fast") await new Promise((resolve) => setTimeout(resolve, 10));
         await this.handlers?.sessionUpdate({
           sessionId,
           update: {
             sessionUpdate: "agent_message_chunk",
             messageId: `${sessionId}-welcome`,
-            content: { type: "text", text: `Loaded ${sessionId}` },
+            content: { type: "text", text: `Loaded ${sessionId} on connection ${connectionId}` },
           },
         });
         return {
@@ -83,7 +95,18 @@ export class MockAcpAdapter implements AcpClientAdapter {
           ],
         };
       },
-      prompt: async ({ sessionId }) => {
+      prompt: async ({ sessionId, prompt }) => {
+        const messageId = `user-${Date.now()}`;
+        for (const content of prompt) {
+          await this.handlers?.sessionUpdate({
+            sessionId,
+            update: {
+              sessionUpdate: "user_message_chunk",
+              messageId,
+              content,
+            },
+          });
+        }
         await this.handlers?.sessionUpdate({
           sessionId,
           update: {

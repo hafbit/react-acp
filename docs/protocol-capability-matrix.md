@@ -7,10 +7,10 @@
 | initialize / 版本协商                         | 实现           | `SdkAcpClientAdapter`、controller           | `stream-conformance.test.ts`                      |
 | authenticate / logout                         | 实现           | controller、认证 hook/primitive             | `controller.test.ts`                              |
 | session/new                                   | 实现           | controller                                  | `controller.test.ts`                              |
-| session/prompt / cancel                       | 实现           | controller                                  | `controller.test.ts`                              |
+| session/prompt / cancel                       | 实现           | controller                                  | `controller.test.ts`、`workbench.spec.ts`         |
 | session/update 内容流                         | 实现           | reducer/projector                           | `state.test.ts`、`projection.test.ts`             |
-| session/load                                  | 能力门控       | `loadSession`                               | `controller.test.ts`                              |
-| session/list + 全分页                         | 能力门控       | `sessionCapabilities.list`                  | `controller.test.ts`                              |
+| session/load / 重连重新挂载                   | 能力门控       | `loadSession` / `resumeSession`             | `controller.test.ts`、`workbench.spec.ts`         |
+| session/list + 全分页对账                     | 能力门控       | `sessionCapabilities.list`                  | `controller.test.ts`                              |
 | session/delete                                | 能力门控       | `sessionCapabilities.delete`                | `controller.test.ts`                              |
 | session/resume                                | 能力门控       | `sessionCapabilities.resume`                | `controller.test.ts`                              |
 | session/close                                 | 能力门控       | `sessionCapabilities.close`                 | `controller.test.ts`                              |
@@ -27,5 +27,7 @@
 | Client fs/write_text_file                     | 按注入声明     | SDK adapter                                 | `stream-conformance.test.ts`、`serialize.test.ts` |
 | Client terminal 全组方法                      | 按整组注入声明 | SDK adapter                                 | `stream-conformance.test.ts`、`serialize.test.ts` |
 | `_meta` / 未知扩展                            | 实现           | reducer/projector                           | `state.test.ts`、`projection.test.ts`             |
+| 乐观用户消息 / live echo 合并                 | 实现           | controller/projector                        | `controller.test.ts`、`workbench.spec.ts`         |
+| session 快速切换 latest-wins                  | 实现           | controller                                  | `controller.test.ts`、`workbench.spec.ts`         |
 | rename / archive / edit / regenerate / branch | 不适用         | 对应 runtime 能力关闭                       | `runtime.test.tsx`、构建检查                      |
 | v2 Draft / `UNSTABLE`                         | 不承诺         | 作为 raw/unsupported 保留                   | `state.test.ts`                                   |

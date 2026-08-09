@@ -8,7 +8,7 @@ import {
   type RespondToToolApprovalOptions,
   type ThreadMessage,
 } from "@assistant-ui/react";
-import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { acpExtras } from "./acp-extras";
 import {
   AcpCapabilityError,
@@ -45,7 +45,16 @@ const choosePermissionOption = (
  * @throws {AcpError} When the workspace or ACP connection is invalid.
  */
 export function useAcpRuntime(options: AcpRuntimeOptions): AssistantRuntime {
-  const [controller] = useState(() => new AcpThreadController(options));
+  const latestOptions = useRef(options);
+  latestOptions.current = options;
+  const [controller] = useState(
+    () =>
+      new AcpThreadController({
+        ...options,
+        onError: (error) => latestOptions.current.onError?.(error),
+        onThreadIdChange: (threadId) => latestOptions.current.onThreadIdChange?.(threadId),
+      }),
+  );
   const state = useControllerState(controller);
 
   useEffect(() => {
@@ -59,15 +68,11 @@ export function useAcpRuntime(options: AcpRuntimeOptions): AssistantRuntime {
       state.connectionStatus === "ready" &&
       state.activeSessionId !== options.threadId
     ) {
-      void controller.selectSession(options.threadId).catch(options.onError);
+      void controller
+        .selectSession(options.threadId, { notify: false })
+        .catch((error) => latestOptions.current.onError?.(error));
     }
-  }, [
-    controller,
-    options.threadId,
-    options.onError,
-    state.connectionStatus,
-    state.activeSessionId,
-  ]);
+  }, [controller, options.threadId, state.connectionStatus, state.activeSessionId]);
 
   const session = state.activeSessionId ? state.sessions[state.activeSessionId] : undefined;
   const extras = useMemo<AcpRuntimeExtras>(
@@ -75,6 +80,7 @@ export function useAcpRuntime(options: AcpRuntimeOptions): AssistantRuntime {
       state,
       session,
       reconnect: () => controller.reconnect(),
+      refreshSessions: () => controller.refreshSessions(),
       authenticate: (methodId) => controller.authenticate(methodId),
       logout: () => controller.logout(),
       selectSession: (sessionId) => controller.selectSession(sessionId),
@@ -107,6 +113,7 @@ export function useAcpRuntime(options: AcpRuntimeOptions): AssistantRuntime {
   const threadList = useMemo(
     () => ({
       threadId: state.activeSessionId,
+      isLoading: state.connectionStatus === "connecting",
       threads: state.sessionOrder.map((sessionId) => {
         const item = state.sessions[sessionId];
         return {
@@ -138,6 +145,8 @@ export function useAcpRuntime(options: AcpRuntimeOptions): AssistantRuntime {
       state.connectionStatus === "closed",
     isSendDisabled:
       state.connectionStatus !== "ready" ||
+      session?.runState === "loading" ||
+      session?.runState === "error" ||
       session?.runState === "running" ||
       session?.runState === "cancelling",
     isRunning: session?.runState === "running" || session?.runState === "cancelling",

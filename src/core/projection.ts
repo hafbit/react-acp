@@ -145,7 +145,7 @@ function projectTool(tool: AcpToolCallRecord): ProjectedPart {
         locations: value.locations,
         rawInput,
         rawOutput,
-        rawUpdates: tool.rawUpdates,
+        rawNotifications: tool.rawNotifications,
       },
     },
     ...(projectToolApproval(tool) ? { approval: projectToolApproval(tool) } : {}),
@@ -155,7 +155,10 @@ function projectTool(tool: AcpToolCallRecord): ProjectedPart {
 const projectPiece = (session: AcpSessionState, piece: AcpMessagePiece): ProjectedPart => {
   switch (piece.type) {
     case "content":
-      return projectContent(piece.content, piece.raw.sessionUpdate === "agent_thought_chunk");
+      return projectContent(
+        piece.content,
+        piece.notification?.update.sessionUpdate === "agent_thought_chunk",
+      );
     case "tool": {
       const tool = session.tools[piece.toolCallId];
       return tool
@@ -168,7 +171,7 @@ const projectPiece = (session: AcpSessionState, piece: AcpMessagePiece): Project
     case "plan":
       return dataPart("acp-plan", piece.plan);
     case "unsupported":
-      return dataPart("acp-unsupported", piece.update);
+      return dataPart("acp-unsupported", piece.notification.update);
   }
 };
 
@@ -197,7 +200,6 @@ const projectMessage = (
   session: AcpSessionState,
   message: AcpMessageRecord,
 ): AcpProjectedMessage => {
-  const raw = message.pieces.map((piece) => (piece.type === "content" ? piece.raw : piece));
   return {
     id: message.id,
     role: message.role,
@@ -209,8 +211,8 @@ const projectMessage = (
       custom: {
         acp: {
           sessionId: session.sessionId,
-          raw,
-          notifications: session.rawNotifications,
+          protocolMessageId: message.protocolMessageId,
+          notifications: message.rawNotifications,
           stopReason:
             message.status?.type === "complete" || message.status?.type === "incomplete"
               ? message.status.stopReason

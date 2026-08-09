@@ -2,7 +2,74 @@ import type { AppendMessage } from "@assistant-ui/react";
 import { PROTOCOL_VERSION } from "@agentclientprotocol/sdk";
 import { describe, expect, it, vi } from "vitest";
 import { AcpThreadController } from "../src/core/controller";
+import type {
+  AcpAdapterConnectOptions,
+  AcpClientAdapter,
+  AcpClientConnection,
+} from "../src/core/types";
 import { ConformanceAdapter } from "./fixture";
+
+const deferred = <T>() => {
+  let resolve!: (value: T) => void;
+  let reject!: (error: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+};
+
+class ReconnectingAdapter implements AcpClientAdapter {
+  readonly handlers: AcpAdapterConnectOptions["handlers"][] = [];
+  readonly connections: AcpClientConnection[] = [];
+  readonly loads: string[] = [];
+  supportsLoad = true;
+
+  async connect(options: AcpAdapterConnectOptions): Promise<AcpClientConnection> {
+    const index = this.connections.length;
+    const lifecycle = new AbortController();
+    this.handlers.push(options.handlers);
+    const connection: AcpClientConnection = {
+      signal: lifecycle.signal,
+      initialize: vi.fn(async () => ({
+        protocolVersion: PROTOCOL_VERSION,
+        agentCapabilities: {
+          loadSession: this.supportsLoad,
+          sessionCapabilities: { list: {} },
+        },
+      })),
+      authenticate: vi.fn(async () => {}),
+      logout: vi.fn(async () => {}),
+      newSession: vi.fn(async () => ({ sessionId: "created" })),
+      loadSession: vi.fn(async ({ sessionId }: { sessionId: string }) => {
+        this.loads.push(`${index}:${sessionId}`);
+        await options.handlers.sessionUpdate({
+          sessionId,
+          update: {
+            sessionUpdate: "user_message_chunk",
+            messageId: `history-${index}`,
+            content: { type: "text", text: `history-${index}` },
+          },
+        });
+        return {};
+      }),
+      listSessions: vi.fn(async () => ({
+        sessions: [{ sessionId: "s1", cwd: "/workspace" }],
+      })),
+      deleteSession: vi.fn(async () => {}),
+      resumeSession: vi.fn(async () => ({})),
+      closeSession: vi.fn(async () => {}),
+      setSessionMode: vi.fn(async () => {}),
+      setSessionConfigOption: vi.fn(async () => ({ configOptions: [] })),
+      prompt: vi.fn(async () => ({ stopReason: "end_turn" as const })),
+      cancel: vi.fn(async () => {}),
+      close: vi.fn(() => lifecycle.abort()),
+    };
+    options.signal.addEventListener("abort", () => lifecycle.abort(), { once: true });
+    this.connections.push(connection);
+    return connection;
+  }
+}
 
 describe("AcpThreadController conformance fixture", () => {
   it("初始化、遍历 session/list 分页并加载历史", async () => {
@@ -45,7 +112,8 @@ describe("AcpThreadController conformance fixture", () => {
     } as unknown as AppendMessage);
 
     const session = controller.getState().sessions.s1!;
-    expect(session.messages.some((message) => message.optimistic)).toBe(true);
+    expect(session.messages.filter((message) => message.role === "user")).toHaveLength(2);
+    expect(session.messages.at(-2)).toMatchObject({ role: "user", optimistic: false });
     expect(session.messages.find((message) => message.id === "agent-answer")?.status).toEqual({
       type: "complete",
       stopReason: "end_turn",
@@ -136,5 +204,277 @@ describe("AcpThreadController conformance fixture", () => {
     expect(controller.getState().connectionStatus).toBe("ready");
     await controller.logout();
     expect(controller.getState().connectionStatus).toBe("auth-required");
+  });
+
+  it("重连后强制 load 当前 session，并忽略旧连接通知", async () => {
+    const adapter = new ReconnectingAdapter();
+    const controller = new AcpThreadController({
+      connection: { type: "adapter", adapter },
+      workspace: { cwd: "/workspace" },
+    });
+    await controller.connect();
+    await controller.selectSession("s1");
+    expect(adapter.loads).toEqual(["0:s1"]);
+
+    await controller.reconnect();
+    expect(adapter.loads).toEqual(["0:s1", "1:s1"]);
+    expect(controller.getState().sessions.s1?.messages[0]?.id).toBe("history-1");
+
+    await adapter.handlers[0]!.sessionUpdate({
+      sessionId: "s1",
+      update: {
+        sessionUpdate: "agent_message_chunk",
+        messageId: "stale",
+        content: { type: "text", text: "stale" },
+      },
+    });
+    expect(
+      controller.getState().sessions.s1?.messages.some((message) => message.id === "stale"),
+    ).toBe(false);
+  });
+
+  it("重连后没有 load/resume 能力时保留缓存并禁止 prompt", async () => {
+    const adapter = new ReconnectingAdapter();
+    const controller = new AcpThreadController({
+      connection: { type: "adapter", adapter },
+      workspace: { cwd: "/workspace" },
+    });
+    await controller.connect();
+    await controller.selectSession("s1");
+    adapter.supportsLoad = false;
+
+    await controller.reconnect();
+    expect(controller.getState().sessions.s1?.messages[0]?.id).toBe("history-0");
+    expect(controller.getState().sessions.s1?.runState).toBe("error");
+    await expect(
+      controller.prompt("s1", [{ type: "text", text: "blocked" }]),
+    ).rejects.toMatchObject({
+      code: "ACP_SESSION_NOT_ATTACHED",
+    });
+  });
+
+  it("快速切换只允许最新 session 生效，同时保留较晚完成的历史", async () => {
+    const adapter = new ConformanceAdapter();
+    const loads = new Map<string, ReturnType<typeof deferred<void>>>();
+    adapter.connection.loadSession = vi.fn(async ({ sessionId }: { sessionId: string }) => {
+      const gate = deferred<void>();
+      loads.set(sessionId, gate);
+      await gate.promise;
+      await adapter.handlers?.sessionUpdate({
+        sessionId,
+        update: {
+          sessionUpdate: "user_message_chunk",
+          messageId: `history-${sessionId}`,
+          content: { type: "text", text: sessionId },
+        },
+      });
+      return {};
+    });
+    const controller = new AcpThreadController({
+      connection: { type: "adapter", adapter },
+      workspace: { cwd: "/workspace" },
+    });
+    await controller.connect();
+
+    const selectA = controller.selectSession("s1");
+    const selectB = controller.selectSession("s2");
+    loads.get("s2")!.resolve();
+    await selectB;
+    loads.get("s1")!.resolve();
+    await selectA;
+
+    expect(controller.getState().activeSessionId).toBe("s2");
+    expect(controller.getState().sessions.s1?.messages[0]?.id).toBe("history-s1");
+    expect(controller.getState().sessions.s2?.messages[0]?.id).toBe("history-s2");
+  });
+
+  it("load 失败恢复快照和原 active session，并允许重试", async () => {
+    const adapter = new ConformanceAdapter();
+    const controller = new AcpThreadController({
+      connection: { type: "adapter", adapter },
+      workspace: { cwd: "/workspace" },
+    });
+    await controller.connect();
+    await controller.createSession();
+    adapter.connection.loadSession = vi.fn(async () => {
+      throw new Error("load failed");
+    });
+
+    await expect(controller.selectSession("s1")).rejects.toThrow("load failed");
+    expect(controller.getState().activeSessionId).toBe("new-session");
+    expect(controller.getState().sessions.s1?.info?.title).toBe("One");
+
+    adapter.connection.loadSession = vi.fn(async ({ sessionId }: { sessionId: string }) => {
+      await adapter.handlers?.sessionUpdate({
+        sessionId,
+        update: {
+          sessionUpdate: "user_message_chunk",
+          content: { type: "text", text: "retried" },
+        },
+      });
+      return {};
+    });
+    await controller.selectSession("s1");
+    expect(controller.getState().activeSessionId).toBe("s1");
+    expect(controller.getState().sessions.s1?.messages[0]?.pieces[0]).toMatchObject({
+      type: "content",
+      content: { type: "text", text: "retried" },
+    });
+  });
+
+  it("合并分块 user echo，保留本地 ID 和协议 ID", async () => {
+    const adapter = new ConformanceAdapter();
+    adapter.connection.prompt = vi.fn(async ({ sessionId }: { sessionId: string }) => {
+      for (const text of ["hel", "lo"]) {
+        await adapter.handlers?.sessionUpdate({
+          sessionId,
+          update: {
+            sessionUpdate: "user_message_chunk",
+            messageId: "protocol-user",
+            content: { type: "text", text },
+            _meta: { echoed: true },
+          },
+          _meta: { envelope: text },
+        });
+      }
+      await adapter.handlers?.sessionUpdate({
+        sessionId,
+        update: {
+          sessionUpdate: "agent_message_chunk",
+          content: { type: "text", text: "answer" },
+        },
+      });
+      return { stopReason: "end_turn" as const };
+    });
+    const controller = new AcpThreadController({
+      connection: { type: "adapter", adapter },
+      workspace: { cwd: "/workspace" },
+    });
+    await controller.connect();
+    await controller.selectSession("s1");
+    await controller.sendMessage({
+      role: "user",
+      content: [{ type: "text", text: "hello" }],
+    } as unknown as AppendMessage);
+
+    const userMessages = controller
+      .getState()
+      .sessions.s1!.messages.filter((message) => message.role === "user");
+    expect(userMessages).toHaveLength(2);
+    expect(userMessages[1]?.id).toMatch(/^local:/);
+    expect(userMessages[1]).toMatchObject({
+      protocolMessageId: "protocol-user",
+      optimistic: false,
+    });
+    expect(userMessages[1]?.rawNotifications).toHaveLength(2);
+  });
+
+  it("不合并内容不同的协议用户消息", async () => {
+    const adapter = new ConformanceAdapter();
+    adapter.connection.prompt = vi.fn(async ({ sessionId }: { sessionId: string }) => {
+      await adapter.handlers?.sessionUpdate({
+        sessionId,
+        update: {
+          sessionUpdate: "user_message_chunk",
+          messageId: "different-user",
+          content: { type: "text", text: "different" },
+        },
+      });
+      return { stopReason: "end_turn" as const };
+    });
+    const controller = new AcpThreadController({
+      connection: { type: "adapter", adapter },
+      workspace: { cwd: "/workspace" },
+    });
+    await controller.connect();
+    await controller.selectSession("s1");
+    await controller.sendMessage({
+      role: "user",
+      content: [{ type: "text", text: "hello" }],
+    } as unknown as AppendMessage);
+
+    const users = controller
+      .getState()
+      .sessions.s1!.messages.filter((message) => message.role === "user");
+    expect(users).toHaveLength(3);
+    expect(users.at(-1)?.protocolMessageId).toBe("different-user");
+  });
+
+  it("prompt 传输失败后 turn 回到 idle 并保留可重试用户消息", async () => {
+    const adapter = new ConformanceAdapter();
+    adapter.connection.prompt = vi.fn(async () => {
+      throw new Error("transport failed");
+    });
+    const controller = new AcpThreadController({
+      connection: { type: "adapter", adapter },
+      workspace: { cwd: "/workspace" },
+    });
+    await controller.connect();
+    await controller.selectSession("s1");
+
+    await expect(
+      controller.sendMessage({
+        role: "user",
+        content: [{ type: "text", text: "retry me" }],
+      } as unknown as AppendMessage),
+    ).rejects.toThrow("transport failed");
+
+    const session = controller.getState().sessions.s1!;
+    expect(session.runState).toBe("idle");
+    expect(session.error).toEqual(new Error("transport failed"));
+    expect(session.messages.at(-1)).toMatchObject({
+      role: "user",
+      optimistic: false,
+      error: new Error("transport failed"),
+    });
+  });
+
+  it("close 取消未决权限并清空 active，resume 通知受控 thread", async () => {
+    const adapter = new ConformanceAdapter();
+    const onThreadIdChange = vi.fn();
+    const controller = new AcpThreadController({
+      connection: { type: "adapter", adapter },
+      workspace: { cwd: "/workspace" },
+      onThreadIdChange,
+    });
+    await controller.connect();
+    await controller.resumeSession("s1");
+    expect(onThreadIdChange).toHaveBeenLastCalledWith("s1");
+    const pending = adapter.handlers!.requestPermission(
+      {
+        sessionId: "s1",
+        toolCall: { toolCallId: "pending-close", title: "Wait" },
+        options: [{ optionId: "no", name: "Reject", kind: "reject_once" }],
+      },
+      new AbortController().signal,
+    );
+
+    await controller.closeSession("s1");
+    await expect(pending).resolves.toEqual({ outcome: { outcome: "cancelled" } });
+    expect(controller.getState().activeSessionId).toBeUndefined();
+    expect(controller.getState().sessions.s1).toBeDefined();
+    expect(onThreadIdChange).toHaveBeenLastCalledWith(undefined);
+  });
+
+  it("refreshSessions 对账非 active session 并保留 active", async () => {
+    const adapter = new ConformanceAdapter();
+    const controller = new AcpThreadController({
+      connection: { type: "adapter", adapter },
+      workspace: { cwd: "/workspace" },
+    });
+    await controller.connect();
+    await controller.createSession();
+    adapter.connection.listSessions = vi.fn(async () => ({
+      sessions: [
+        { sessionId: "s2", cwd: "/workspace", title: "Two updated" },
+        { sessionId: "s3", cwd: "/workspace", title: "Three" },
+      ],
+    }));
+
+    await controller.refreshSessions();
+    expect(controller.getState().sessionOrder).toEqual(["s2", "s3", "new-session"]);
+    expect(controller.getState().sessions.s1).toBeUndefined();
+    expect(controller.getState().sessions.s2?.info?.title).toBe("Two updated");
+    expect(controller.getState().sessions["new-session"]).toBeDefined();
   });
 });

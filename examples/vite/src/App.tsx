@@ -34,13 +34,16 @@ function ConnectionStatus() {
   return <output data-testid="connection">{connection.status}</output>;
 }
 
-function Workbench() {
+function Workbench({ adapter }: { adapter: MockAcpAdapter }) {
+  const extras = useAcpRuntimeExtras();
   return (
     <main>
       <SessionList />
       <section>
         <header>
           <ConnectionStatus />
+          <button onClick={() => adapter.dropConnection()}>Drop connection</button>
+          <button onClick={() => void extras.reconnect()}>Reconnect</button>
           <AcpModeSelect aria-label="Mode" />
           <AcpConfigOptions />
         </header>
@@ -78,7 +81,7 @@ export function App() {
   });
   return (
     <AssistantRuntimeProvider runtime={runtime}>
-      <Workbench />
+      <Workbench adapter={adapter} />
     </AssistantRuntimeProvider>
   );
 }

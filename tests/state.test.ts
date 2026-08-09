@@ -71,7 +71,7 @@ describe("reduceAcpThreadState", () => {
       rawInput: { path: "/tmp/a" },
       rawOutput: { partial: true },
     });
-    expect(tool?.rawUpdates).toHaveLength(2);
+    expect(tool?.rawNotifications).toHaveLength(2);
   });
 
   it("权限可先于工具事件到达并投影到占位工具", () => {
@@ -139,12 +139,16 @@ describe("reduceAcpThreadState", () => {
         content: { type: "text", text: "keep" },
       }),
     );
-    state = reduceAcpThreadState(state, { type: "session.loading", sessionId: "s1" });
+    state = reduceAcpThreadState(state, {
+      type: "session.loading",
+      sessionId: "s1",
+      clearHistory: true,
+    });
     expect(state.sessions.s1?.messages).toEqual([]);
     expect(state.sessions.s2?.messages).toHaveLength(1);
   });
 
-  it("未知扩展进入 unhandledEvents 而不崩溃", () => {
+  it("未知扩展进入 unhandledNotifications 而不崩溃", () => {
     const state = reduceAcpThreadState(
       createAcpThreadState(),
       update("s1", {
@@ -152,7 +156,8 @@ describe("reduceAcpThreadState", () => {
         payload: { answer: 42 },
       } as unknown as SessionUpdate),
     );
-    expect(state.sessions.s1?.unhandledEvents).toHaveLength(1);
+    expect(state.sessions.s1?.unhandledNotifications).toHaveLength(1);
+    expect(state.sessions.s1?.unhandledNotifications[0]?.sessionId).toBe("s1");
     expect(state.sessions.s1?.messages[0]?.pieces[0]).toMatchObject({
       type: "unsupported",
     });
@@ -160,7 +165,7 @@ describe("reduceAcpThreadState", () => {
 
   it("保存计划、命令、模式、配置和用量状态", () => {
     let state = reduceAcpThreadState(createAcpThreadState(), {
-      type: "session.opened",
+      type: "session.attached",
       sessionId: "s1",
       modes: {
         currentModeId: "ask",
@@ -221,6 +226,7 @@ describe("reduceAcpThreadState", () => {
         createdAt: 1,
         optimistic: true,
         pieces: [],
+        rawNotifications: [],
       },
     });
     state = reduceAcpThreadState(state, {

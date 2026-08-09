@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 export const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 export const manifestPath = resolve(repoRoot, "package.json");
 export const jsrManifestPath = resolve(repoRoot, "jsr.json");
+export const versionSourcePath = resolve(repoRoot, "src/version.ts");
 export const packageName = "@hafbit/react-acp";
 export const repositoryUrl = "git+https://github.com/hafbit/react-acp.git";
 
@@ -40,6 +41,12 @@ export function readManifest(path = manifestPath) {
 
 export function readJsrManifest(path = jsrManifestPath) {
   return JSON.parse(readFileSync(path, "utf8"));
+}
+
+export function readSourceVersion(path = versionSourcePath) {
+  const match = /REACT_ACP_VERSION\s*=\s*["']([^"']+)["']/.exec(readFileSync(path, "utf8"));
+  if (!match) throw new Error("src/version.ts must export REACT_ACP_VERSION.");
+  return match[1];
 }
 
 export const jsrExports = {
@@ -95,6 +102,21 @@ export function assertReleaseManifests(
   return { npmManifest: npmPackage, jsrManifest: jsrPackage };
 }
 
+export function assertReleaseArtifacts(
+  expectedVersion,
+  npmManifest = readManifest(),
+  jsrManifest = readJsrManifest(),
+  sourceVersion = readSourceVersion(),
+) {
+  const manifests = assertReleaseManifests(expectedVersion, npmManifest, jsrManifest);
+  if (sourceVersion !== manifests.npmManifest.version) {
+    throw new Error(
+      `Source version ${sourceVersion} does not match package.json version ${manifests.npmManifest.version}.`,
+    );
+  }
+  return { ...manifests, sourceVersion };
+}
+
 export function updateReleaseManifests(
   versionInput,
   npmManifest = readManifest(),
@@ -105,6 +127,7 @@ export function updateReleaseManifests(
   return {
     npmManifest: { ...current.npmManifest, version },
     jsrManifest: { ...current.jsrManifest, version },
+    sourceVersion: version,
   };
 }
 
