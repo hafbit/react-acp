@@ -48,6 +48,11 @@ jobs:
           cache: pnpm
           registry-url: https://registry.npmjs.org/
 
+      - name: Set up Deno
+        uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
+        with:
+          deno-version: v2.x
+
       - name: Use npm 11
         run: npm install --global npm@11
 
@@ -84,11 +89,9 @@ jobs:
         run: pnpm check
 
       - name: Build and validate npm release tarball
-        if: github.event_name == 'push'
         run: pnpm release:pack
 
       - name: Upload npm release tarball
-        if: github.event_name == 'push'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: react-acp-${{ steps.release.outputs.version }}
@@ -204,35 +207,22 @@ jobs:
         run: |
           smoke_dir="$(mktemp -d)"
           pushd "$smoke_dir"
-          pnpm init
-          pnpm add --ignore-scripts \
+          deno check --minimum-dependency-age=0 --node-modules-dir=auto \
             "jsr:@hafbit/react-acp@${VERSION}" \
-            "@assistant-ui/react@^0.15" \
-            "react@^19" \
-            "react-dom@^19" \
-            "typescript@^5.9"
-
-          node --input-type=module --eval \
-            "await import('@hafbit/react-acp'); await import('@hafbit/react-acp/core'); await import('@hafbit/react-acp/primitives');"
-
-          printf '%s\n' \
-            "import * as main from '@hafbit/react-acp';" \
-            "import * as core from '@hafbit/react-acp/core';" \
-            "import * as primitives from '@hafbit/react-acp/primitives';" \
-            "void main; void core; void primitives;" > smoke.ts
-          pnpm exec tsc --noEmit --skipLibCheck \
-            --module NodeNext --moduleResolution NodeNext --target ES2022 smoke.ts
+            "jsr:@hafbit/react-acp@${VERSION}/core" \
+            "jsr:@hafbit/react-acp@${VERSION}/primitives"
+          deno eval --minimum-dependency-age=0 --node-modules-dir=auto \
+            "await import('jsr:@hafbit/react-acp@${VERSION}'); await import('jsr:@hafbit/react-acp@${VERSION}/core'); await import('jsr:@hafbit/react-acp@${VERSION}/primitives');"
           popd
 
       - name: Create or verify GitHub Release
-        if: github.event_name == 'push'
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VERSION: ${{ steps.release.outputs.version }}
           PRERELEASE: ${{ steps.release.outputs.prerelease }}
         run: |
-          tag="$GITHUB_REF_NAME"
+          tag="v${VERSION}"
           tarball="$(node -p "JSON.parse(require('fs').readFileSync('release-artifacts/manifest.json')).tarball")"
           asset_name="$(basename "$tarball")"
 
