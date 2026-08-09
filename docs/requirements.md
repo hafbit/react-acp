@@ -1,4 +1,4 @@
-# react-acp 0.1.0 需求基线
+# react-acp 0.1.x 需求基线
 
 本文是首版实现的中文权威需求记录。目标是提供单一可发布包，将 ACP v1 session 的事件流投影为 assistant-ui runtime、message 和 thread。
 
@@ -22,3 +22,13 @@
 ## 发布边界
 
 本仓库生成 `@hafbit/react-acp@0.1.0` 发布产物。无 scope 的 `react-acp` 被 npm 相似名称策略拒绝后，维护者已确认改用组织 scope；首次发布仍由维护者通过 2FA 手工执行。
+
+## 0.1.2 生命周期加固补充
+
+- 每个新连接都必须重新挂载 active session；旧连接的通知、关闭回调和异步结果全部丢弃。
+- session 选择遵循 latest-selection-wins；load 失败恢复消息快照和原 active session，并可重试。
+- 未挂载或挂载失败的 session 禁止 prompt；prompt 传输失败回到 idle，消息保留错误供重试。
+- 乐观用户消息不伪造协议通知；匹配的 live user echo 合并到稳定本地消息，协议 ID 单独保存。
+- 原始通知按消息、工具和 session 最新状态归属保存，不保留 session 全量日志，不向每条消息复制全量通知。
+- session list 完整分页并对账非 active session；close 保留缓存，delete 才移除；生命周期方法一致更新受控 thread 回调。
+- Provider identity 配置通过 React `key` 重建，动态回调无需重建；不增加 ACP/assistant-ui 均不存在的公开状态。

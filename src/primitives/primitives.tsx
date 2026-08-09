@@ -1,10 +1,6 @@
 "use client";
 
-import type {
-  ComponentPropsWithoutRef,
-  ReactElement,
-  ReactNode,
-} from "react";
+import type { ComponentPropsWithoutRef, ReactElement, ReactNode } from "react";
 import {
   useAcpAuth,
   useAcpCommands,
@@ -22,21 +18,14 @@ type DivProps = ComponentPropsWithoutRef<"div">;
  * Renders advertised authentication methods as buttons.
  * Returns `null` when authentication is not required.
  */
-export function AcpAuthMethods({
-  children,
-  ...props
-}: DivProps): ReactElement | null {
+export function AcpAuthMethods({ children, ...props }: DivProps): ReactElement | null {
   const auth = useAcpAuth();
   if (!auth.required) return null;
   return (
     <div {...props}>
       {children}
       {auth.methods.map((method) => (
-        <button
-          type="button"
-          key={method.id}
-          onClick={() => void auth.authenticate(method.id)}
-        >
+        <button type="button" key={method.id} onClick={() => void auth.authenticate(method.id)}>
           {method.name}
         </button>
       ))}
@@ -48,10 +37,7 @@ export function AcpAuthMethods({
  * Renders pending ACP tool-permission options for the active session.
  * Returns `null` when no permission is pending.
  */
-export function AcpPermissionList({
-  children,
-  ...props
-}: DivProps): ReactElement | null {
+export function AcpPermissionList({ children, ...props }: DivProps): ReactElement | null {
   const { pending, reply } = useAcpPermissions();
   if (!pending.length) return null;
   return (
@@ -64,17 +50,12 @@ export function AcpPermissionList({
             <button
               type="button"
               key={option.optionId}
-              onClick={() =>
-                void reply(request.toolCall.toolCallId, option.optionId)
-              }
+              onClick={() => void reply(request.toolCall.toolCallId, option.optionId)}
             >
               {option.name}
             </button>
           ))}
-          <button
-            type="button"
-            onClick={() => void reply(request.toolCall.toolCallId)}
-          >
+          <button type="button" onClick={() => void reply(request.toolCall.toolCallId)}>
             Cancel
           </button>
         </fieldset>
@@ -128,10 +109,7 @@ export function AcpModeSelect(
 }
 
 /** Renders advertised boolean and select configuration options for the session. */
-export function AcpConfigOptions({
-  children,
-  ...props
-}: DivProps): ReactElement | null {
+export function AcpConfigOptions({ children, ...props }: DivProps): ReactElement | null {
   const options = useAcpConfigOptions();
   const extras = useAcpRuntimeExtras();
   if (!options.length) return null;
@@ -267,10 +245,8 @@ export function AcpDataPart({
   );
 }
 
-export function AcpDiff({
-  diff,
-  ...props
-}: DivProps & { diff: unknown }): ReactElement {
+/** Renders a protocol or tool diff value without applying visual styling. */
+export function AcpDiff({ diff, ...props }: DivProps & { diff: unknown }): ReactElement {
   return (
     <div {...props} data-acp-part="diff">
       <pre>{typeof diff === "string" ? diff : JSON.stringify(diff, null, 2)}</pre>
@@ -278,6 +254,7 @@ export function AcpDiff({
   );
 }
 
+/** Renders retained ACP terminal data as readable JSON. */
 export function AcpTerminal({
   terminal,
   ...props
@@ -296,6 +273,7 @@ type ResourceLike = {
   title?: string | null;
 };
 
+/** Renders an ACP resource link or retained resource value. */
 export function AcpResource({
   resource,
   ...props
@@ -315,10 +293,8 @@ export function AcpResource({
   );
 }
 
-export function AcpUnsupported({
-  value,
-  ...props
-}: DivProps & { value: unknown }): ReactElement {
+/** Renders a forward-compatible ACP value not interpreted by this package. */
+export function AcpUnsupported({ value, ...props }: DivProps & { value: unknown }): ReactElement {
   return (
     <div {...props} data-acp-part="unsupported">
       <pre>{JSON.stringify(value, null, 2)}</pre>

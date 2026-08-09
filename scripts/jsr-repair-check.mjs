@@ -1,18 +1,12 @@
 import { appendFileSync } from "node:fs";
-import {
-  assertJsrRepairGit,
-  assertReleaseManifests,
-  parseReleaseVersion,
-} from "./release-lib.mjs";
+import { assertJsrRepairGit, assertReleaseManifests, parseReleaseVersion } from "./release-lib.mjs";
 
 const versionInput = process.argv[2];
 const sourceRef = process.argv[3];
 
 try {
   if (!versionInput || !sourceRef || process.argv.length !== 4) {
-    throw new Error(
-      "Usage: pnpm release:jsr-repair-check <version> <source_ref>",
-    );
+    throw new Error("Usage: pnpm release:jsr-repair-check <version> <source_ref>");
   }
   const release = parseReleaseVersion(versionInput);
   assertReleaseManifests(release.version);

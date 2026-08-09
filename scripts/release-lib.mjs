@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 export const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 export const manifestPath = resolve(repoRoot, "package.json");
 export const jsrManifestPath = resolve(repoRoot, "jsr.json");
+export const versionSourcePath = resolve(repoRoot, "src/version.ts");
 export const packageName = "@hafbit/react-acp";
 export const repositoryUrl = "git+https://github.com/hafbit/react-acp.git";
 
@@ -40,6 +41,12 @@ export function readManifest(path = manifestPath) {
 
 export function readJsrManifest(path = jsrManifestPath) {
   return JSON.parse(readFileSync(path, "utf8"));
+}
+
+export function readSourceVersion(path = versionSourcePath) {
+  const match = /REACT_ACP_VERSION\s*=\s*["']([^"']+)["']/.exec(readFileSync(path, "utf8"));
+  if (!match) throw new Error("src/version.ts must export REACT_ACP_VERSION.");
+  return match[1];
 }
 
 export const jsrExports = {
@@ -95,6 +102,21 @@ export function assertReleaseManifests(
   return { npmManifest: npmPackage, jsrManifest: jsrPackage };
 }
 
+export function assertReleaseArtifacts(
+  expectedVersion,
+  npmManifest = readManifest(),
+  jsrManifest = readJsrManifest(),
+  sourceVersion = readSourceVersion(),
+) {
+  const manifests = assertReleaseManifests(expectedVersion, npmManifest, jsrManifest);
+  if (sourceVersion !== manifests.npmManifest.version) {
+    throw new Error(
+      `Source version ${sourceVersion} does not match package.json version ${manifests.npmManifest.version}.`,
+    );
+  }
+  return { ...manifests, sourceVersion };
+}
+
 export function updateReleaseManifests(
   versionInput,
   npmManifest = readManifest(),
@@ -105,6 +127,7 @@ export function updateReleaseManifests(
   return {
     npmManifest: { ...current.npmManifest, version },
     jsrManifest: { ...current.jsrManifest, version },
+    sourceVersion: version,
   };
 }
 
@@ -122,9 +145,7 @@ export function assertReleaseManifest(expectedVersion, manifest = readManifest()
     manifest.publishConfig?.access !== "public" ||
     manifest.publishConfig?.registry !== "https://registry.npmjs.org/"
   ) {
-    throw new Error(
-      "@hafbit/react-acp must publish publicly to https://registry.npmjs.org/.",
-    );
+    throw new Error("@hafbit/react-acp must publish publicly to https://registry.npmjs.org/.");
   }
   if (manifest.repository?.url !== repositoryUrl) {
     throw new Error(`package.json repository.url must be ${repositoryUrl}.`);
@@ -163,12 +184,7 @@ export function assertReleaseTagGit(tag, runGit = defaultGit) {
   }
   const tagCommit = runGit(["rev-list", "-n", "1", ref]);
   try {
-    runGit([
-      "merge-base",
-      "--is-ancestor",
-      tagCommit,
-      "refs/remotes/origin/latest",
-    ]);
+    runGit(["merge-base", "--is-ancestor", tagCommit, "refs/remotes/origin/latest"]);
   } catch {
     throw new Error(`${tag} must point to an ancestor of origin/latest.`);
   }
@@ -204,10 +220,7 @@ export const requiredPackedFiles = [
 ];
 
 export function assertPackedManifest(packedManifest, sourceManifest) {
-  if (
-    packedManifest.name !== packageName ||
-    packedManifest.version !== sourceManifest.version
-  ) {
+  if (packedManifest.name !== packageName || packedManifest.version !== sourceManifest.version) {
     throw new Error("Packed package name or version does not match package.json.");
   }
   assertReleaseManifest(sourceManifest.version, packedManifest);

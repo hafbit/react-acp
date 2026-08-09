@@ -5,16 +5,8 @@ import type {
   McpServer,
 } from "@agentclientprotocol/sdk";
 import type { AppendMessage } from "@assistant-ui/react";
-import {
-  AcpCapabilityError,
-  AcpInvalidWorkspaceError,
-  AcpUnsupportedContentError,
-} from "./errors";
-import type {
-  AcpClientServices,
-  AcpTerminalServices,
-  AcpWorkspace,
-} from "./types";
+import { AcpCapabilityError, AcpInvalidWorkspaceError, AcpUnsupportedContentError } from "./errors";
+import type { AcpClientServices, AcpTerminalServices, AcpWorkspace } from "./types";
 
 /** Returns whether every terminal operation required by ACP is implemented. */
 export const hasCompleteTerminalServices = (
@@ -22,17 +14,15 @@ export const hasCompleteTerminalServices = (
 ): terminal is AcpTerminalServices =>
   Boolean(
     terminal &&
-      typeof terminal.create === "function" &&
-      typeof terminal.output === "function" &&
-      typeof terminal.release === "function" &&
-      typeof terminal.waitForExit === "function" &&
-      typeof terminal.kill === "function",
+    typeof terminal.create === "function" &&
+    typeof terminal.output === "function" &&
+    typeof terminal.release === "function" &&
+    typeof terminal.waitForExit === "function" &&
+    typeof terminal.kill === "function",
   );
 
 const isAbsolutePath = (value: string) =>
-  value.startsWith("/") ||
-  /^[A-Za-z]:[\\/]/.test(value) ||
-  value.startsWith("\\\\");
+  value.startsWith("/") || /^[A-Za-z]:[\\/]/.test(value) || value.startsWith("\\\\");
 
 /**
  * Validates that the workspace and additional directories use absolute paths.
@@ -93,7 +83,7 @@ export function buildSessionRequest(
     if (server.type === "acp") {
       throw new AcpCapabilityError(
         "MCP ACP transport",
-        "The ACP MCP transport is UNSTABLE and is not enabled by react-acp 0.1.1.",
+        "The ACP MCP transport is UNSTABLE and is not enabled by react-acp.",
       );
     }
   }
@@ -112,10 +102,7 @@ const parseDataUrl = (value: string) => {
   return match ? { mimeType: match[1]!, data: match[2]! } : undefined;
 };
 
-const ensureCapability = (
-  supported: boolean | undefined,
-  contentType: string,
-) => {
+const ensureCapability = (supported: boolean | undefined, contentType: string) => {
   if (!supported) {
     throw new AcpUnsupportedContentError(
       contentType,
@@ -160,10 +147,7 @@ function serializePart(
           mimeType: part.mimeType,
         };
       }
-      ensureCapability(
-        capabilities?.promptCapabilities?.embeddedContext,
-        "embedded resource",
-      );
+      ensureCapability(capabilities?.promptCapabilities?.embeddedContext, "embedded resource");
       return {
         type: "resource",
         resource: {
@@ -186,10 +170,7 @@ function serializePart(
         return part.data as ContentBlock;
       }
       if (part.name === "acp-resource") {
-        ensureCapability(
-          capabilities?.promptCapabilities?.embeddedContext,
-          "embedded resource",
-        );
+        ensureCapability(capabilities?.promptCapabilities?.embeddedContext, "embedded resource");
         return part.data as ContentBlock;
       }
       throw new AcpUnsupportedContentError(`data:${part.name}`);

@@ -57,12 +57,7 @@ export type MaybePromise<T> = T | Promise<T>;
 
 /** Lifecycle state of the ACP client connection. */
 export type AcpConnectionStatus =
-  | "idle"
-  | "connecting"
-  | "auth-required"
-  | "ready"
-  | "error"
-  | "closed";
+  "idle" | "connecting" | "auth-required" | "ready" | "error" | "closed";
 
 /** Workspace data supplied when creating, loading, or resuming ACP sessions. */
 export type AcpWorkspace = {
@@ -93,10 +88,7 @@ export type AcpFileSystemServices = {
     signal: AbortSignal,
   ) => MaybePromise<ReadTextFileResponse>;
   /** Writes a text file after the host applies its own access policy. */
-  writeTextFile?: (
-    request: WriteTextFileRequest,
-    signal: AbortSignal,
-  ) => MaybePromise<void>;
+  writeTextFile?: (request: WriteTextFileRequest, signal: AbortSignal) => MaybePromise<void>;
 };
 
 /** Complete host terminal service required before terminal capability is advertised. */
@@ -112,10 +104,7 @@ export type AcpTerminalServices = {
     signal: AbortSignal,
   ) => MaybePromise<TerminalOutputResponse>;
   /** Releases host resources associated with a terminal. */
-  release: (
-    request: ReleaseTerminalRequest,
-    signal: AbortSignal,
-  ) => MaybePromise<void>;
+  release: (request: ReleaseTerminalRequest, signal: AbortSignal) => MaybePromise<void>;
   /** Waits for a terminal process to exit. */
   waitForExit: (
     request: WaitForTerminalExitRequest,
@@ -151,10 +140,7 @@ export type AcpClientHandlers = {
     signal: AbortSignal,
   ): MaybePromise<ReadTextFileResponse>;
   /** Handles an agent request to write a text file. */
-  writeTextFile?(
-    request: WriteTextFileRequest,
-    signal: AbortSignal,
-  ): MaybePromise<void>;
+  writeTextFile?(request: WriteTextFileRequest, signal: AbortSignal): MaybePromise<void>;
   /** Handles the complete set of agent terminal requests. */
   terminal?: AcpTerminalServices;
 };
@@ -211,10 +197,14 @@ export interface AcpClientAdapter {
 
 /** Ordered protocol fragment retained inside a projected ACP message. */
 export type AcpMessagePiece =
-  | { type: "content"; content: ContentBlock; raw: SessionUpdate }
+  | { type: "content"; content: ContentBlock; notification?: SessionNotification }
   | { type: "tool"; toolCallId: string }
-  | { type: "plan"; plan: Extract<SessionUpdate, { sessionUpdate: "plan" }> }
-  | { type: "unsupported"; update: SessionUpdate | unknown };
+  | {
+      type: "plan";
+      plan: Extract<SessionUpdate, { sessionUpdate: "plan" }>;
+      notification: SessionNotification;
+    }
+  | { type: "unsupported"; notification: SessionNotification };
 
 /** Protocol-authoritative message record retained in ACP session state. */
 export type AcpMessageRecord = {
@@ -222,10 +212,14 @@ export type AcpMessageRecord = {
   id: string;
   /** Message author. */
   role: "user" | "assistant";
+  /** Opaque ACP message ID associated with a locally stable projected ID. */
+  protocolMessageId?: string;
   /** Local creation time in Unix milliseconds. */
   createdAt: number;
   /** Ordered raw content, tool, plan, and unsupported protocol pieces. */
   pieces: readonly AcpMessagePiece[];
+  /** Complete ACP notifications owned directly by this message. */
+  rawNotifications: readonly SessionNotification[];
   /** Assistant turn completion state. */
   status?:
     | { type: "running" }
@@ -237,7 +231,7 @@ export type AcpMessageRecord = {
   error?: unknown;
 };
 
-/** Latest state and full raw update history for one ACP tool call. */
+/** Latest state and full raw notification history for one ACP tool call. */
 export type AcpToolCallRecord = {
   /** ACP tool call identifier. */
   toolCallId: string;
@@ -247,8 +241,8 @@ export type AcpToolCallRecord = {
   value: ToolCall | ToolCallUpdate;
   /** Associated permission request, when approval is required. */
   permission?: AcpPermissionRecord;
-  /** Tool call and update values in arrival order. */
-  rawUpdates: readonly (ToolCall | ToolCallUpdate)[];
+  /** Tool call notifications in arrival order. */
+  rawNotifications: readonly SessionNotification[];
 };
 
 /** Lifecycle state for an ACP tool permission request. */
@@ -262,12 +256,7 @@ export type AcpPermissionRecord = {
 };
 
 /** Lifecycle state of the current prompt turn in an ACP session. */
-export type AcpSessionRunState =
-  | "idle"
-  | "loading"
-  | "running"
-  | "cancelling"
-  | "error";
+export type AcpSessionRunState = "idle" | "loading" | "running" | "cancelling" | "error";
 
 /** Protocol-authoritative state retained for one ACP session. */
 export type AcpSessionState = {
@@ -302,10 +291,10 @@ export type AcpSessionState = {
   lastChunk?: { role: "user" | "assistant"; messageId: string };
   /** Most recent assistant message used to associate tools and plans. */
   lastAssistantMessageId?: string;
-  /** Forward-compatible updates not interpreted by this version. */
-  unhandledEvents: readonly unknown[];
-  /** Original ACP notifications retained in arrival order. */
-  rawNotifications: readonly SessionNotification[];
+  /** Latest full notification for each interpreted session-level update kind. */
+  latestNotifications: Readonly<Record<string, SessionNotification>>;
+  /** Forward-compatible notifications not interpreted by this version. */
+  unhandledNotifications: readonly SessionNotification[];
   /** Latest session-level failure. */
   error?: unknown;
 };
@@ -336,24 +325,30 @@ export type AcpStateEvent =
   | { type: "connection.initialized"; response: InitializeResponse }
   | { type: "sessions.listed"; sessions: readonly SessionInfo[] }
   | {
-      type: "session.opened";
+      type: "session.attached";
       sessionId: string;
       info?: SessionInfo;
       modes?: SessionModeState | null;
       configOptions?: readonly SessionConfigOption[] | null;
-      loading?: boolean;
     }
-  | { type: "session.selected"; sessionId: string }
+  | { type: "session.selected"; sessionId: string | undefined }
   | { type: "session.deleted"; sessionId: string }
-  | { type: "session.loading"; sessionId: string }
-  | { type: "session.loaded"; sessionId: string }
+  | { type: "session.loading"; sessionId: string; clearHistory: boolean }
+  | { type: "session.restored"; session: AcpSessionState; error?: unknown }
+  | { type: "session.attach_failed"; sessionId: string; error: unknown }
+  | { type: "session.closed"; sessionId: string }
+  | {
+      type: "session.config_options";
+      sessionId: string;
+      configOptions: readonly SessionConfigOption[];
+    }
   | { type: "session.prompt_started"; sessionId: string }
   | {
       type: "session.prompt_stopped";
       sessionId: string;
       response: PromptResponse;
     }
-  | { type: "session.failed"; sessionId: string; error: unknown }
+  | { type: "session.turn_failed"; sessionId: string; error: unknown }
   | { type: "session.cancel_started"; sessionId: string }
   | { type: "session.update"; notification: SessionNotification }
   | {
@@ -366,6 +361,13 @@ export type AcpStateEvent =
       sessionId: string;
       messageId: string;
       error: unknown;
+    }
+  | {
+      type: "message.optimistic_confirmed";
+      sessionId: string;
+      messageId: string;
+      protocolMessageId?: string;
+      notifications?: readonly SessionNotification[];
     }
   | {
       type: "permission.requested";
@@ -386,6 +388,8 @@ export type AcpRuntimeExtras = {
   session: AcpSessionState | undefined;
   /** Reopens the ACP transport and repeats initialization. */
   reconnect(): Promise<void>;
+  /** Reloads the complete paginated ACP session list. */
+  refreshSessions(): Promise<void>;
   /** Authenticates using one advertised method ID. */
   authenticate(methodId: string): Promise<void>;
   /** Logs out when supported by the agent. */
@@ -442,13 +446,13 @@ export type AcpPermissionsHookState = {
 
 /** Options accepted by {@link useAcpRuntime} and {@link AcpThreadController}. */
 export type AcpRuntimeOptions = ExternalStoreSharedOptions & {
-  /** ACP stream factory or custom client adapter. */
+  /** Provider identity: ACP stream factory or custom adapter. Rebuild with a React key to change. */
   connection: AcpConnectionSource;
-  /** Workspace supplied to ACP session operations. */
+  /** Provider identity: workspace supplied to session operations. Rebuild with a React key to change. */
   workspace: AcpWorkspace;
-  /** Host filesystem and terminal services exposed to the agent. */
+  /** Provider identity: host services exposed to the agent. Rebuild with a React key to change. */
   clientServices?: AcpClientServices;
-  /** Additional client capabilities merged with capabilities derived from services. */
+  /** Provider identity: additional client capabilities. Rebuild with a React key to change. */
   clientCapabilities?: ClientCapabilities;
   /** Controlled ACP session ID to select after connection. */
   threadId?: string;
@@ -458,7 +462,7 @@ export type AcpRuntimeOptions = ExternalStoreSharedOptions & {
   onError?: (error: unknown) => void;
   /** Additional assistant-ui runtime adapters. */
   adapters?: RuntimeAdapters;
-  /** ACP client identity; defaults to `react-acp` and the package version. */
+  /** Provider identity: ACP client info. Defaults to `react-acp` and the package version. */
   clientInfo?: { name: string; version: string };
 };
 

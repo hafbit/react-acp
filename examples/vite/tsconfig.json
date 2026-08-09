@@ -4,6 +4,12 @@
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "module": "ESNext",
     "moduleResolution": "Bundler",
+    "baseUrl": "../..",
+    "paths": {
+      "@hafbit/react-acp": ["src/index.ts"],
+      "@hafbit/react-acp/core": ["src/core/index.ts"],
+      "@hafbit/react-acp/primitives": ["src/primitives/index.ts"]
+    },
     "jsx": "react-jsx",
     "strict": true,
     "skipLibCheck": true,

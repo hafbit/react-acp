@@ -1,8 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  createAcpThreadState,
-  reduceAcpThreadState,
-} from "../src/core/state";
+import { createAcpThreadState, reduceAcpThreadState } from "../src/core/state";
 import { projectAcpThreadMessages } from "../src/core/projection";
 
 describe("ACP message projection", () => {
@@ -98,5 +95,66 @@ describe("ACP message projection", () => {
       },
       artifact: { acp: { title: "Edit file", kind: "edit" } },
     });
+  });
+
+  it("按消息和 session 归属保留完整 notification，不复制 session 全量日志", () => {
+    let state = createAcpThreadState();
+    const messageNotification = {
+      sessionId: "s1",
+      update: {
+        sessionUpdate: "agent_message_chunk" as const,
+        messageId: "m1",
+        content: { type: "text" as const, text: "answer" },
+        _meta: { update: "message" },
+      },
+      _meta: { envelope: "message" },
+    };
+    const usageNotification = {
+      sessionId: "s1",
+      update: {
+        sessionUpdate: "usage_update" as const,
+        used: 1,
+        size: 10,
+        _meta: { update: "usage" },
+      },
+      _meta: { envelope: "usage" },
+    };
+    const unknownNotification = {
+      sessionId: "s1",
+      update: {
+        sessionUpdate: "vendor_extension",
+        value: 42,
+        _meta: { update: "extension" },
+      },
+      _meta: { envelope: "extension" },
+    };
+
+    state = reduceAcpThreadState(state, {
+      type: "session.update",
+      notification: messageNotification,
+    });
+    state = reduceAcpThreadState(state, {
+      type: "session.update",
+      notification: usageNotification,
+    });
+    state = reduceAcpThreadState(state, {
+      type: "session.update",
+      notification: unknownNotification as never,
+    });
+
+    const session = state.sessions.s1!;
+    expect(session.messages[0]?.rawNotifications).toEqual([
+      messageNotification,
+      unknownNotification,
+    ]);
+    expect(session.latestNotifications.usage_update).toEqual(usageNotification);
+    expect(session.unhandledNotifications).toEqual([unknownNotification]);
+
+    const projected = projectAcpThreadMessages(state, "s1");
+    const acpMetadata = projected[0]?.metadata?.custom?.acp as
+      { notifications?: unknown[] } | undefined;
+    expect(acpMetadata?.notifications).toEqual([messageNotification, unknownNotification]);
+    expect(JSON.stringify(projected[0]?.metadata?.custom?.acp)).not.toContain('"usage"');
+    expect(JSON.stringify(projected[0]?.metadata?.custom?.acp)).toContain('"extension"');
   });
 });

@@ -1,10 +1,6 @@
 import { ExportedMessageRepository } from "@assistant-ui/react";
-import type {
-  ContentBlock,
-  PermissionOptionKind,
-  ToolCallContent,
-  ToolCallStatus,
-} from "@agentclientprotocol/sdk";
+import type { ContentBlock, PermissionOptionKind, ToolCallContent } from "@agentclientprotocol/sdk";
+import { errorMessage } from "./internal-errors";
 import type {
   AcpMessagePiece,
   AcpMessageRecord,
@@ -22,13 +18,9 @@ const dataPart = (name: string, data: unknown): ProjectedPart => ({
   data,
 });
 
-const toDataUrl = (mimeType: string, data: string) =>
-  `data:${mimeType};base64,${data}`;
+const toDataUrl = (mimeType: string, data: string) => `data:${mimeType};base64,${data}`;
 
-function projectContent(
-  content: ContentBlock,
-  reasoning: boolean,
-): ProjectedPart {
+function projectContent(content: ContentBlock, reasoning: boolean): ProjectedPart {
   switch (content.type) {
     case "text":
       return reasoning
@@ -62,8 +54,7 @@ function projectContent(
             type: "file",
             filename: content.resource.uri,
             data: content.resource.blob,
-            mimeType:
-              content.resource.mimeType ?? "application/octet-stream",
+            mimeType: content.resource.mimeType ?? "application/octet-stream",
           }
         : dataPart("acp-resource", content);
     default:
@@ -75,11 +66,7 @@ function projectContent(
 }
 
 const approvalKind = (kind: PermissionOptionKind) =>
-  kind.replaceAll("_", "-") as
-    | "allow-once"
-    | "allow-always"
-    | "reject-once"
-    | "reject-always";
+  kind.replaceAll("_", "-") as "allow-once" | "allow-always" | "reject-once" | "reject-always";
 
 const projectToolApproval = (tool: AcpToolCallRecord) => {
   const permission = tool.permission;
@@ -95,10 +82,7 @@ const projectToolApproval = (tool: AcpToolCallRecord) => {
     return { id: tool.toolCallId, options };
   }
 
-  if (
-    permission.status === "cancelled" ||
-    permission.response?.outcome.outcome === "cancelled"
-  ) {
+  if (permission.status === "cancelled" || permission.response?.outcome.outcome === "cancelled") {
     return { id: tool.toolCallId, options, resolution: "cancelled" as const };
   }
 
@@ -106,9 +90,7 @@ const projectToolApproval = (tool: AcpToolCallRecord) => {
     permission.response?.outcome.outcome === "selected"
       ? permission.response.outcome.optionId
       : undefined;
-  const selected = permission.request.options.find(
-    (option) => option.optionId === optionId,
-  );
+  const selected = permission.request.options.find((option) => option.optionId === optionId);
   return {
     id: tool.toolCallId,
     options,
@@ -133,7 +115,7 @@ const normalizeToolContent = (content: readonly ToolCallContent[] | null | undef
 
 function projectTool(tool: AcpToolCallRecord): ProjectedPart {
   const value = tool.value;
-  const status = value.status as ToolCallStatus | null | undefined;
+  const status = value.status;
   const rawInput = value.rawInput;
   const rawOutput = value.rawOutput;
   const args = normalizeObject(rawInput);
@@ -163,24 +145,19 @@ function projectTool(tool: AcpToolCallRecord): ProjectedPart {
         locations: value.locations,
         rawInput,
         rawOutput,
-        rawUpdates: tool.rawUpdates,
+        rawNotifications: tool.rawNotifications,
       },
     },
-    ...(projectToolApproval(tool)
-      ? { approval: projectToolApproval(tool) }
-      : {}),
+    ...(projectToolApproval(tool) ? { approval: projectToolApproval(tool) } : {}),
   };
 }
 
-const projectPiece = (
-  session: AcpSessionState,
-  piece: AcpMessagePiece,
-): ProjectedPart => {
+const projectPiece = (session: AcpSessionState, piece: AcpMessagePiece): ProjectedPart => {
   switch (piece.type) {
     case "content":
       return projectContent(
         piece.content,
-        piece.raw.sessionUpdate === "agent_thought_chunk",
+        piece.notification?.update.sessionUpdate === "agent_thought_chunk",
       );
     case "tool": {
       const tool = session.tools[piece.toolCallId];
@@ -194,7 +171,7 @@ const projectPiece = (
     case "plan":
       return dataPart("acp-plan", piece.plan);
     case "unsupported":
-      return dataPart("acp-unsupported", piece.update);
+      return dataPart("acp-unsupported", piece.notification.update);
   }
 };
 
@@ -214,7 +191,7 @@ const statusForMessage = (message: AcpMessageRecord) => {
       return {
         type: "incomplete" as const,
         reason: status.error ? ("error" as const) : ("other" as const),
-        ...(status.error ? { error: String(status.error) } : {}),
+        ...(status.error ? { error: errorMessage(status.error) } : {}),
       };
   }
 };
@@ -223,9 +200,6 @@ const projectMessage = (
   session: AcpSessionState,
   message: AcpMessageRecord,
 ): AcpProjectedMessage => {
-  const raw = message.pieces.map((piece) =>
-    piece.type === "content" ? piece.raw : piece,
-  );
   return {
     id: message.id,
     role: message.role,
@@ -237,14 +211,13 @@ const projectMessage = (
       custom: {
         acp: {
           sessionId: session.sessionId,
-          raw,
-          notifications: session.rawNotifications,
+          protocolMessageId: message.protocolMessageId,
+          notifications: message.rawNotifications,
           stopReason:
-            message.status?.type === "complete" ||
-            message.status?.type === "incomplete"
+            message.status?.type === "complete" || message.status?.type === "incomplete"
               ? message.status.stopReason
               : undefined,
-          error: message.error ? String(message.error) : undefined,
+          error: message.error ? errorMessage(message.error) : undefined,
         },
       },
     },
@@ -267,7 +240,5 @@ export function projectAcpThreadRepository(
   state: AcpThreadState,
   sessionId = state.activeSessionId,
 ): ExportedMessageRepository {
-  return ExportedMessageRepository.fromArray(
-    projectAcpThreadMessages(state, sessionId),
-  );
+  return ExportedMessageRepository.fromArray(projectAcpThreadMessages(state, sessionId));
 }
