@@ -280,7 +280,7 @@ export function reduceAcpThreadState(state: AcpThreadState, event: AcpStateEvent
         initializeResponse: event.response,
         capabilities: event.response.agentCapabilities,
         authMethods: event.response.authMethods ?? [],
-        connectionStatus: (event.response.authMethods?.length ?? 0) > 0 ? "auth-required" : "ready",
+        connectionStatus: (event.response.authMethods?.length ?? 0) > 0 ? "connecting" : "ready",
       };
     case "sessions.listed": {
       const sessions: Record<string, AcpSessionState> = {};

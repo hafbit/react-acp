@@ -254,7 +254,16 @@ export class AcpThreadController {
         );
       }
       this.dispatch({ type: "connection.initialized", response });
-      if (!(response.authMethods?.length ?? 0)) await this.afterAuthentication(generation);
+      const authenticationRequired = await this.isAuthenticationRequired(connection, response);
+      if (generation !== this.connectionGeneration || abortController.signal.aborted) {
+        connection.close(abortController.signal.reason);
+        throw new AcpError("ACP_DISCONNECTED", "ACP connection was aborted.");
+      }
+      this.dispatch({
+        type: "connection.status",
+        status: authenticationRequired ? "auth-required" : "ready",
+      });
+      if (!authenticationRequired) await this.afterAuthentication(generation);
     } catch (error) {
       if (generation !== this.connectionGeneration) throw error;
       if (abortController.signal.aborted) {
@@ -293,6 +302,16 @@ export class AcpThreadController {
       type: "connection.status",
       status: this.state.authMethods.length ? "auth-required" : "ready",
     });
+  }
+
+  private async isAuthenticationRequired(
+    connection: AcpClientConnection,
+    response: { authMethods?: readonly unknown[] | null },
+  ): Promise<boolean> {
+    if (!(response.authMethods?.length ?? 0)) return false;
+    const authenticationStatus = await connection.authenticationStatus?.();
+    if (!authenticationStatus) return true;
+    return authenticationStatus.type === "unauthenticated";
   }
 
   private async afterAuthentication(generation: number): Promise<void> {
