@@ -127,6 +127,37 @@ describe("AcpThreadController conformance fixture", () => {
     });
   });
 
+  it("将正文和附件图片一起发送到 ACP prompt", async () => {
+    const adapter = new ConformanceAdapter();
+    const controller = new AcpThreadController({
+      connection: { type: "adapter", adapter },
+      workspace: { cwd: "/workspace" },
+    });
+    await controller.connect();
+    await controller.selectSession("s1");
+
+    await controller.sendMessage({
+      role: "user",
+      content: [{ type: "text", text: "describe this image" }],
+      attachments: [
+        {
+          id: "clipboard-image",
+          type: "image",
+          name: "clipboard.png",
+          content: [{ type: "image", image: "data:image/png;base64,YQ==" }],
+        },
+      ],
+    } as unknown as AppendMessage);
+
+    expect(adapter.connection.prompt).toHaveBeenCalledWith({
+      sessionId: "s1",
+      prompt: [
+        { type: "text", text: "describe this image" },
+        { type: "image", mimeType: "image/png", data: "YQ==" },
+      ],
+    });
+  });
+
   it("权限请求与取消均完整响应", async () => {
     const adapter = new ConformanceAdapter();
     const controller = new AcpThreadController({

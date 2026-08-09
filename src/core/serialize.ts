@@ -194,5 +194,9 @@ export function serializeAppendMessage(
       "ACP session/prompt only accepts user messages from the composer.",
     );
   }
-  return message.content.map((part) => serializePart(part, capabilities));
+  const parts = [
+    ...message.content,
+    ...(message.attachments ?? []).flatMap((attachment) => attachment.content ?? []),
+  ];
+  return parts.map((part) => serializePart(part, capabilities));
 }
