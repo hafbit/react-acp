@@ -97,11 +97,49 @@ describe("ACP serialization and capabilities", () => {
     ]);
   });
 
+  it("将附件内容合并到 ACP prompt", () => {
+    const message = {
+      role: "user",
+      content: [{ type: "text", text: "describe this image" }],
+      attachments: [
+        {
+          id: "clipboard-image",
+          type: "image",
+          name: "clipboard.png",
+          content: [{ type: "image", image: "data:image/png;base64,YQ==" }],
+        },
+      ],
+    } as unknown as AppendMessage;
+
+    expect(
+      serializeAppendMessage(message, {
+        promptCapabilities: { image: true },
+      }),
+    ).toEqual([
+      { type: "text", text: "describe this image" },
+      { type: "image", mimeType: "image/png", data: "YQ==" },
+    ]);
+  });
+
   it("不对未声明支持的内容静默降级", () => {
     const message = {
       role: "user",
       content: [{ type: "image", image: "data:image/png;base64,YQ==" }],
     } as unknown as AppendMessage;
+    expect(() => serializeAppendMessage(message, {})).toThrow(AcpUnsupportedContentError);
+  });
+
+  it("附件图片仍受 prompt image capability 门控", () => {
+    const message = {
+      role: "user",
+      content: [{ type: "text", text: "hello" }],
+      attachments: [
+        {
+          content: [{ type: "image", image: "data:image/png;base64,YQ==" }],
+        },
+      ],
+    } as unknown as AppendMessage;
+
     expect(() => serializeAppendMessage(message, {})).toThrow(AcpUnsupportedContentError);
   });
 });
