@@ -24,6 +24,7 @@ class ReconnectingAdapter implements AcpClientAdapter {
   readonly connections: AcpClientConnection[] = [];
   readonly loads: string[] = [];
   supportsLoad = true;
+  authStatus?: { readonly type: string };
 
   async connect(options: AcpAdapterConnectOptions): Promise<AcpClientConnection> {
     const index = this.connections.length;
@@ -37,7 +38,9 @@ class ReconnectingAdapter implements AcpClientAdapter {
           loadSession: this.supportsLoad,
           sessionCapabilities: { list: {} },
         },
+        ...(this.authStatus ? { authMethods: [{ id: "chat-gpt", name: "ChatGPT" }] } : {}),
       })),
+      ...(this.authStatus ? { authenticationStatus: vi.fn(async () => this.authStatus!) } : {}),
       authenticate: vi.fn(async () => {}),
       logout: vi.fn(async () => {}),
       newSession: vi.fn(async () => ({ sessionId: "created" })),
@@ -204,6 +207,68 @@ describe("AcpThreadController conformance fixture", () => {
     expect(controller.getState().connectionStatus).toBe("ready");
     await controller.logout();
     expect(controller.getState().connectionStatus).toBe("auth-required");
+  });
+
+  it("已有认证状态时跳过登录门控", async () => {
+    const adapter = new ConformanceAdapter();
+    adapter.connection.initialize = vi.fn(async () => ({
+      protocolVersion: PROTOCOL_VERSION,
+      agentCapabilities: { sessionCapabilities: { list: {} } },
+      authMethods: [
+        { id: "api-key", name: "API Key" },
+        { id: "chat-gpt", name: "ChatGPT" },
+      ],
+    }));
+    adapter.connection.authenticationStatus = vi.fn(async () => ({
+      type: "chat-gpt",
+      email: "user@example.com",
+    }));
+    const controller = new AcpThreadController({
+      connection: { type: "adapter", adapter },
+      workspace: { cwd: "/workspace" },
+    });
+
+    await controller.connect();
+
+    expect(adapter.connection.authenticationStatus).toHaveBeenCalledOnce();
+    expect(adapter.connection.authenticate).not.toHaveBeenCalled();
+    expect(controller.getState().connectionStatus).toBe("ready");
+    expect(adapter.connection.listSessions).toHaveBeenCalled();
+  });
+
+  it("认证状态明确为 unauthenticated 时显示登录门控", async () => {
+    const adapter = new ConformanceAdapter();
+    adapter.connection.initialize = vi.fn(async () => ({
+      protocolVersion: PROTOCOL_VERSION,
+      authMethods: [{ id: "chat-gpt", name: "ChatGPT" }],
+    }));
+    adapter.connection.authenticationStatus = vi.fn(async () => ({ type: "unauthenticated" }));
+    const controller = new AcpThreadController({
+      connection: { type: "adapter", adapter },
+      workspace: { cwd: "/workspace" },
+    });
+
+    await controller.connect();
+
+    expect(controller.getState().connectionStatus).toBe("auth-required");
+  });
+
+  it("重连后重新查询并保持已有认证状态", async () => {
+    const adapter = new ReconnectingAdapter();
+    adapter.authStatus = { type: "chat-gpt" };
+    const controller = new AcpThreadController({
+      connection: { type: "adapter", adapter },
+      workspace: { cwd: "/workspace" },
+    });
+
+    await controller.connect();
+    expect(controller.getState().connectionStatus).toBe("ready");
+    await controller.reconnect();
+
+    expect(controller.getState().connectionStatus).toBe("ready");
+    expect(adapter.connections).toHaveLength(2);
+    expect(adapter.connections[0]!.authenticationStatus).toHaveBeenCalledOnce();
+    expect(adapter.connections[1]!.authenticationStatus).toHaveBeenCalledOnce();
   });
 
   it("重连后强制 load 当前 session，并忽略旧连接通知", async () => {

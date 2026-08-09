@@ -4,6 +4,62 @@ import { describe, expect, it, vi } from "vitest";
 import { AcpThreadController } from "../src/core/controller";
 
 describe("in-process ACP Agent conformance", () => {
+  it("通过认证状态扩展识别已有登录态", async () => {
+    const clientToAgent = new TransformStream<Uint8Array, Uint8Array>();
+    const agentToClient = new TransformStream<Uint8Array, Uint8Array>();
+    const status = vi.fn(() => ({ type: "chat-gpt", email: "user@example.com" }));
+    const agentConnection = agent({ name: "authenticated-fixture" })
+      .onRequest(methods.agent.initialize, ({ params }) => ({
+        protocolVersion: params.protocolVersion,
+        agentCapabilities: {},
+        authMethods: [
+          { id: "api-key", name: "API Key" },
+          { id: "chat-gpt", name: "ChatGPT" },
+        ],
+      }))
+      .onRequest("authentication/status", () => ({}), status)
+      .connect(ndJsonStream(agentToClient.writable, clientToAgent.readable));
+    const controller = new AcpThreadController({
+      connection: {
+        type: "stream",
+        createStream: () => ndJsonStream(clientToAgent.writable, agentToClient.readable),
+      },
+      workspace: { cwd: "/workspace" },
+    });
+
+    await controller.connect();
+
+    expect(status).toHaveBeenCalledOnce();
+    expect(controller.getState().connectionStatus).toBe("ready");
+    controller.dispose();
+    agentConnection.close();
+  });
+
+  it("认证状态扩展不可用时兼容传统认证门控", async () => {
+    const clientToAgent = new TransformStream<Uint8Array, Uint8Array>();
+    const agentToClient = new TransformStream<Uint8Array, Uint8Array>();
+    const agentConnection = agent({ name: "legacy-auth-fixture" })
+      .onRequest(methods.agent.initialize, ({ params }) => ({
+        protocolVersion: params.protocolVersion,
+        agentCapabilities: {},
+        authMethods: [{ id: "login", name: "Login" }],
+      }))
+      .connect(ndJsonStream(agentToClient.writable, clientToAgent.readable));
+    const controller = new AcpThreadController({
+      connection: {
+        type: "stream",
+        createStream: () => ndJsonStream(clientToAgent.writable, agentToClient.readable),
+      },
+      workspace: { cwd: "/workspace" },
+    });
+
+    await controller.connect();
+
+    expect(controller.getState().connectionStatus).toBe("auth-required");
+    controller.dispose();
+    agentConnection.close();
+  });
+
   it("通过官方 Stream SDK 完成 initialize、Client 服务、权限和消息流", async () => {
     const clientToAgent = new TransformStream<Uint8Array, Uint8Array>();
     const agentToClient = new TransformStream<Uint8Array, Uint8Array>();

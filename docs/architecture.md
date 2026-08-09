@@ -26,6 +26,7 @@ flowchart LR
 - `stream`：`SdkAcpClientAdapter` 在连接前注册全部 Agent→Client handler，再调用官方 SDK 的 `ClientApp`。
 - `adapter`：宿主负责实际传输和 Agent 生命周期，但必须提供同一套稳定方法及事件分发。
 - 浏览器应用通常需要宿主或网关把 stdio Agent 转换为可用 Stream；这不属于本包职责。
+- `authMethods` 仅表示 Agent 提供的认证方式。存在认证方式时优先查询可选 `authentication/status` 扩展；只有返回 `unauthenticated` 才进入登录门控，扩展不可用时兼容回退到传统门控。
 - 每次连接有独立 generation。旧连接通知、关闭回调和异步结果不会进入新连接状态；重连 initialize/auth 后必须重新 load 当前 session，缺少 load 时才使用 resume。
 
 ## Session 生命周期

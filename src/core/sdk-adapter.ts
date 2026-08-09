@@ -1,10 +1,24 @@
-import { client, methods, type ClientConnection } from "@agentclientprotocol/sdk";
+import { RequestError, client, methods, type ClientConnection } from "@agentclientprotocol/sdk";
 import type {
   AcpAdapterConnectOptions,
+  AcpAuthenticationStatus,
   AcpClientAdapter,
   AcpClientConnection,
   AcpStreamFactory,
 } from "./types";
+
+const AUTHENTICATION_STATUS_METHOD = "authentication/status";
+
+const parseAuthenticationStatus = (value: unknown): AcpAuthenticationStatus => {
+  if (
+    !value ||
+    typeof value !== "object" ||
+    typeof (value as { type?: unknown }).type !== "string"
+  ) {
+    throw new TypeError("The ACP authentication/status extension returned an invalid response.");
+  }
+  return value as AcpAuthenticationStatus;
+};
 
 /** ACP client adapter implemented with the official TypeScript SDK and a stream factory. */
 export class SdkAcpClientAdapter implements AcpClientAdapter {
@@ -68,6 +82,15 @@ const createConnectionFacade = (
 ): AcpClientConnection => ({
   signal: connection.signal,
   initialize: (request) => connection.agent.request(methods.agent.initialize, request),
+  authenticationStatus: async () => {
+    try {
+      const response = await connection.agent.request(AUTHENTICATION_STATUS_METHOD, {});
+      return parseAuthenticationStatus(response);
+    } catch (error) {
+      if (error instanceof RequestError && error.code === -32601) return undefined;
+      throw error;
+    }
+  },
   authenticate: async (methodId) => {
     await connection.agent.request(methods.agent.authenticate, { methodId });
   },

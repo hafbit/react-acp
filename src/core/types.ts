@@ -59,6 +59,14 @@ export type MaybePromise<T> = T | Promise<T>;
 export type AcpConnectionStatus =
   "idle" | "connecting" | "auth-required" | "ready" | "error" | "closed";
 
+/** Authentication state returned by an optional agent status extension. */
+export type AcpAuthenticationStatus = Readonly<{
+  /** `unauthenticated` means login is required; other values identify the active method. */
+  type: string;
+  /** Agent-specific authentication metadata. */
+  [key: string]: unknown;
+}>;
+
 /** Workspace data supplied when creating, loading, or resuming ACP sessions. */
 export type AcpWorkspace = {
   /** Absolute working-directory path exposed to the ACP agent. */
@@ -159,6 +167,8 @@ export interface AcpClientConnection {
   readonly signal: AbortSignal;
   /** Negotiates protocol version, capabilities, and authentication methods. */
   initialize(request: InitializeRequest): Promise<InitializeResponse>;
+  /** Returns current authentication state when the agent supports a status extension. */
+  authenticationStatus?(): Promise<AcpAuthenticationStatus | undefined>;
   /** Authenticates with one method advertised during initialization. */
   authenticate(methodId: string): Promise<void>;
   /** Logs out when the agent advertises logout support. */
