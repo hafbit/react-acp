@@ -93,7 +93,7 @@ export function buildSessionRequest(
     if (server.type === "acp") {
       throw new AcpCapabilityError(
         "MCP ACP transport",
-        "The ACP MCP transport is UNSTABLE and is not enabled by react-acp 0.1.0.",
+        "The ACP MCP transport is UNSTABLE and is not enabled by react-acp 0.1.1.",
       );
     }
   }

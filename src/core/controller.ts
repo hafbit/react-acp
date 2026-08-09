@@ -160,7 +160,7 @@ export class AcpThreadController {
         ),
         clientInfo: this.options.clientInfo ?? {
           name: "react-acp",
-          version: "0.1.0",
+          version: "0.1.1",
         },
       });
       if (abortController.signal.aborted) {

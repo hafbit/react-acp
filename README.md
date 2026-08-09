@@ -2,7 +2,7 @@
 
 `react-acp` 将 [Agent Client Protocol (ACP)](https://agentclientprotocol.com/) 会话投影为 [assistant-ui](https://www.assistant-ui.com/) runtime。ACP session 是线程权威来源；消息、推理、工具调用、权限、计划、模式、配置与用量由协议事件驱动。
 
-> 当前状态：`0.1.0` 开发版。兼容承诺覆盖官方 TypeScript SDK 标记为稳定的 ACP v1 API；实验 API 与 ACP v2 Draft 不在承诺范围内。
+> 当前状态：`0.1.1` 开发版。兼容承诺覆盖官方 TypeScript SDK 标记为稳定的 ACP v1 API；实验 API 与 ACP v2 Draft 不在承诺范围内。
 
 ## 安装
 
