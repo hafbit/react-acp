@@ -1,5 +1,6 @@
 import {
   PROTOCOL_VERSION,
+  RequestError,
   type ContentBlock,
   type PromptResponse,
   type RequestPermissionResponse,
@@ -310,8 +311,19 @@ export class AcpThreadController {
   ): Promise<boolean> {
     if (!(response.authMethods?.length ?? 0)) return false;
     const authenticationStatus = await connection.authenticationStatus?.();
-    if (!authenticationStatus) return true;
+    if (!authenticationStatus) return false;
     return authenticationStatus.type === "unauthenticated";
+  }
+
+  private async runAgentRequest<T>(operation: () => Promise<T>): Promise<T> {
+    try {
+      return await operation();
+    } catch (error) {
+      if (error instanceof RequestError && error.code === -32000) {
+        this.dispatch({ type: "connection.status", status: "auth-required" });
+      }
+      throw error;
+    }
   }
 
   private async afterAuthentication(generation: number): Promise<void> {
@@ -334,7 +346,9 @@ export class AcpThreadController {
     const sessions: SessionInfo[] = [];
     let cursor: string | undefined;
     do {
-      const response = await connection.listSessions(cursor ? { cursor } : {});
+      const response = await this.runAgentRequest(() =>
+        connection.listSessions(cursor ? { cursor } : {}),
+      );
       if (generation !== this.connectionGeneration) return;
       sessions.push(...response.sessions);
       cursor = response.nextCursor ?? undefined;
@@ -346,8 +360,10 @@ export class AcpThreadController {
   async createSession(): Promise<string> {
     const token = ++this.selectionGeneration;
     const generation = this.connectionGeneration;
-    const response = await this.requireConnection().newSession(
-      buildSessionRequest(this.options.workspace, this.state.capabilities),
+    const response = await this.runAgentRequest(() =>
+      this.requireConnection().newSession(
+        buildSessionRequest(this.options.workspace, this.state.capabilities),
+      ),
     );
     if (generation !== this.connectionGeneration) {
       throw new AcpError("ACP_DISCONNECTED", "ACP connection changed while creating a session.");
@@ -441,9 +457,11 @@ export class AcpThreadController {
     this.dispatch({ type: "session.loading", sessionId, clearHistory: !useResume });
     if (!useResume) this.loadingSessions.add(sessionId);
     try {
-      const response = useResume
-        ? await connection.resumeSession({ sessionId, ...base })
-        : await connection.loadSession({ sessionId, ...base });
+      const response = await this.runAgentRequest(() =>
+        useResume
+          ? connection.resumeSession({ sessionId, ...base })
+          : connection.loadSession({ sessionId, ...base }),
+      );
       if (generation !== this.connectionGeneration) {
         throw new AcpError("ACP_DISCONNECTED", "ACP connection changed while attaching a session.");
       }
@@ -470,7 +488,7 @@ export class AcpThreadController {
     if (!hasAgentCapability(this.state.capabilities, "delete")) {
       throw new AcpCapabilityError("session/delete");
     }
-    await this.requireConnection().deleteSession(sessionId);
+    await this.runAgentRequest(() => this.requireConnection().deleteSession(sessionId));
     this.attachedSessions.delete(sessionId);
     this.dispatch({ type: "session.deleted", sessionId });
     if (this.settledActiveSessionId === sessionId) {
@@ -491,7 +509,7 @@ export class AcpThreadController {
       throw new AcpCapabilityError("session/close");
     }
     await this.cancelPendingPermissions(sessionId);
-    await this.requireConnection().closeSession(sessionId);
+    await this.runAgentRequest(() => this.requireConnection().closeSession(sessionId));
     this.attachedSessions.delete(sessionId);
     this.dispatch({ type: "session.closed", sessionId });
     if (this.state.activeSessionId === sessionId) {
@@ -516,7 +534,9 @@ export class AcpThreadController {
     }
     this.dispatch({ type: "session.prompt_started", sessionId });
     try {
-      const response = await this.requireConnection().prompt({ sessionId, prompt });
+      const response = await this.runAgentRequest(() =>
+        this.requireConnection().prompt({ sessionId, prompt }),
+      );
       this.dispatch({ type: "session.prompt_stopped", sessionId, response });
       return response;
     } catch (error) {
@@ -656,7 +676,9 @@ export class AcpThreadController {
     if (!this.state.sessions[sessionId]?.modes) {
       throw new AcpCapabilityError("session/set_mode");
     }
-    await this.requireConnection().setSessionMode({ sessionId, modeId });
+    await this.runAgentRequest(() =>
+      this.requireConnection().setSessionMode({ sessionId, modeId }),
+    );
   }
 
   /** Changes an advertised session configuration option. */
@@ -668,11 +690,13 @@ export class AcpThreadController {
     if (!this.state.sessions[sessionId]?.configOptions.some((option) => option.id === configId)) {
       throw new AcpCapabilityError("session/set_config_option");
     }
-    const response = await this.requireConnection().setSessionConfigOption({
-      sessionId,
-      configId,
-      value,
-    } as SetSessionConfigOptionRequest);
+    const response = await this.runAgentRequest(() =>
+      this.requireConnection().setSessionConfigOption({
+        sessionId,
+        configId,
+        value,
+      } as SetSessionConfigOptionRequest),
+    );
     this.dispatch({
       type: "session.config_options",
       sessionId,

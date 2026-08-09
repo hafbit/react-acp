@@ -1,5 +1,5 @@
 import type { AppendMessage } from "@assistant-ui/react";
-import { PROTOCOL_VERSION } from "@agentclientprotocol/sdk";
+import { PROTOCOL_VERSION, RequestError } from "@agentclientprotocol/sdk";
 import { describe, expect, it, vi } from "vitest";
 import { AcpThreadController } from "../src/core/controller";
 import type {
@@ -231,6 +231,7 @@ describe("AcpThreadController conformance fixture", () => {
       connection: { type: "adapter", adapter },
       workspace: { cwd: "/workspace" },
     });
+    adapter.connection.authenticationStatus = vi.fn(async () => ({ type: "unauthenticated" }));
     await controller.connect();
     expect(controller.getState().connectionStatus).toBe("auth-required");
     await controller.authenticate("login");
@@ -282,6 +283,37 @@ describe("AcpThreadController conformance fixture", () => {
     await controller.connect();
 
     expect(controller.getState().connectionStatus).toBe("auth-required");
+  });
+
+  it("认证状态扩展不可用时先继续，并在 Agent 返回 auth_required 后门控", async () => {
+    const adapter = new ConformanceAdapter();
+    adapter.connection.initialize = vi.fn(async () => ({
+      protocolVersion: PROTOCOL_VERSION,
+      authMethods: [{ id: "opencode-login", name: "Login with opencode" }],
+    }));
+    adapter.connection.newSession = vi.fn(async () => {
+      throw RequestError.authRequired();
+    });
+    const controller = new AcpThreadController({
+      connection: { type: "adapter", adapter },
+      workspace: { cwd: "/workspace" },
+    });
+
+    await controller.connect();
+    expect(controller.getState().connectionStatus).toBe("ready");
+
+    await expect(
+      controller.sendMessage({
+        role: "user",
+        content: [{ type: "text", text: "hello" }],
+      } as unknown as AppendMessage),
+    ).rejects.toMatchObject({ code: -32000 });
+    expect(controller.getState().connectionStatus).toBe("auth-required");
+    expect(adapter.connection.newSession).toHaveBeenCalledOnce();
+
+    await controller.authenticate("opencode-login");
+    expect(controller.getState().connectionStatus).toBe("ready");
+    expect(adapter.connection.newSession).toHaveBeenCalledOnce();
   });
 
   it("重连后重新查询并保持已有认证状态", async () => {

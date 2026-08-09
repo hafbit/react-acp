@@ -35,7 +35,7 @@ describe("in-process ACP Agent conformance", () => {
     agentConnection.close();
   });
 
-  it("认证状态扩展不可用时兼容传统认证门控", async () => {
+  it("认证状态扩展不可用时不把认证能力误判为未登录", async () => {
     const clientToAgent = new TransformStream<Uint8Array, Uint8Array>();
     const agentToClient = new TransformStream<Uint8Array, Uint8Array>();
     const agentConnection = agent({ name: "legacy-auth-fixture" })
@@ -55,7 +55,7 @@ describe("in-process ACP Agent conformance", () => {
 
     await controller.connect();
 
-    expect(controller.getState().connectionStatus).toBe("auth-required");
+    expect(controller.getState().connectionStatus).toBe("ready");
     controller.dispose();
     agentConnection.close();
   });
