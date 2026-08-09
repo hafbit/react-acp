@@ -1,13 +1,19 @@
 {
   "$schema": "https://jsr.io/schema/config-file.v1.json",
   "name": "@hafbit/react-acp",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "exports": {
     ".": "./src/index.ts",
     "./core": "./src/core/index.ts",
     "./primitives": "./src/primitives/index.ts"
   },
   "publish": {
-    "include": ["src/**/*.ts", "src/**/*.tsx", "README.md", "LICENSE", "package.json"]
+    "include": [
+      "src/**/*.ts",
+      "src/**/*.tsx",
+      "README.md",
+      "LICENSE",
+      "package.json"
+    ]
   }
 }
