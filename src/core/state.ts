@@ -360,6 +360,7 @@ export function reduceAcpThreadState(state: AcpThreadState, event: AcpStateEvent
         runState: "running",
         turn: session.turn + 1,
         lastChunk: undefined,
+        lastAssistantMessageId: undefined,
         error: undefined,
       }));
     case "session.prompt_stopped":
