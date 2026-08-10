@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { formatReleaseSource } from "./release-format.mjs";
 import {
   assertCleanWorkingTree,
   assertJsrManifest,
@@ -10,6 +11,7 @@ import {
   assertReleaseManifests,
   assertReleaseArtifacts,
   assertReleaseTagGit,
+  jsrManifestPath,
   parseReleaseTag,
   parseReleaseVersion,
   requiredPackedFiles,
@@ -118,6 +120,15 @@ test("updates npm and JSR versions together", () => {
   assert.equal(updated.npmManifest.name, "@hafbit/react-acp");
   assert.equal(updated.jsrManifest.exports["./core"], "./src/core/index.ts");
   assert.equal(updated.sourceVersion, "2.0.0-rc.1");
+});
+
+test("formats the JSR publish include list across multiple lines", async () => {
+  const formatted = await formatReleaseSource(
+    jsrManifestPath,
+    JSON.stringify(jsrManifest(), null, 2),
+  );
+  assert.match(formatted, /"include": \[\n      "src\/\*\*\/\*\.ts",\n      "src\/\*\*\/\*\.tsx",/);
+  assert.ok(formatted.endsWith("\n"));
 });
 
 test("validates the source client version with both manifests", () => {

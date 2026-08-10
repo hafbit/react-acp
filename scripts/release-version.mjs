@@ -8,6 +8,7 @@ import {
   readJsrManifest,
   updateReleaseManifests,
 } from "./release-lib.mjs";
+import { formatReleaseSource } from "./release-format.mjs";
 
 const input = process.argv[2];
 if (!input || process.argv.length !== 3) {
@@ -22,12 +23,18 @@ try {
     readManifest(),
     readJsrManifest(),
   );
-  writeFileSync(manifestPath, `${JSON.stringify(npmManifest, null, 2)}\n`);
-  writeFileSync(jsrManifestPath, `${JSON.stringify(jsrManifest, null, 2)}\n`);
-  writeFileSync(
-    versionSourcePath,
-    `/** Package version used for the default ACP client identity. */\nexport const REACT_ACP_VERSION = "${sourceVersion}";\n`,
+  const sources = [
+    [manifestPath, JSON.stringify(npmManifest, null, 2)],
+    [jsrManifestPath, JSON.stringify(jsrManifest, null, 2)],
+    [
+      versionSourcePath,
+      `/** Package version used for the default ACP client identity. */\nexport const REACT_ACP_VERSION = "${sourceVersion}";`,
+    ],
+  ];
+  const formattedSources = await Promise.all(
+    sources.map(async ([path, source]) => [path, await formatReleaseSource(path, source)]),
   );
+  for (const [path, source] of formattedSources) writeFileSync(path, source);
   console.log(`Updated ${npmManifest.name} npm and JSR manifests to ${npmManifest.version}.`);
 } catch (error) {
   console.error(error instanceof Error ? error.message : error);
