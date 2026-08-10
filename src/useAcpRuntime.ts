@@ -84,6 +84,7 @@ export function useAcpRuntime(options: AcpRuntimeOptions): AssistantRuntime {
       authenticate: (methodId) => controller.authenticate(methodId),
       logout: () => controller.logout(),
       selectSession: (sessionId) => controller.selectSession(sessionId),
+      reloadSession: (sessionId) => controller.reloadSession(sessionId),
       createSession: () => controller.createSession(),
       deleteSession: (sessionId) => controller.deleteSession(sessionId),
       resumeSession: (sessionId) => controller.resumeSession(sessionId),
@@ -148,7 +149,8 @@ export function useAcpRuntime(options: AcpRuntimeOptions): AssistantRuntime {
       session?.runState === "loading" ||
       session?.runState === "error" ||
       session?.runState === "running" ||
-      session?.runState === "cancelling",
+      session?.runState === "cancelling" ||
+      session?.access.mode === "read-only",
     isRunning: session?.runState === "running" || session?.runState === "cancelling",
     messageRepository,
     extras: acpExtras.provide(extras),

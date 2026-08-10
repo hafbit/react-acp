@@ -92,10 +92,12 @@ export function AcpModeSelect(
 ): ReactElement | null {
   const modes = useAcpModes();
   const extras = useAcpRuntimeExtras();
+  const readOnly = extras.session?.access.mode === "read-only";
   if (!modes) return null;
   return (
     <select
       {...props}
+      disabled={props.disabled || readOnly}
       value={modes.currentModeId}
       onChange={(event) => void extras.setMode(event.currentTarget.value)}
     >
@@ -112,6 +114,7 @@ export function AcpModeSelect(
 export function AcpConfigOptions({ children, ...props }: DivProps): ReactElement | null {
   const options = useAcpConfigOptions();
   const extras = useAcpRuntimeExtras();
+  const readOnly = extras.session?.access.mode === "read-only";
   if (!options.length) return null;
   return (
     <div {...props}>
@@ -122,6 +125,7 @@ export function AcpConfigOptions({ children, ...props }: DivProps): ReactElement
           {option.type === "boolean" ? (
             <input
               type="checkbox"
+              disabled={readOnly}
               checked={option.currentValue}
               onChange={(event) =>
                 void extras.setConfigOption(option.id, event.currentTarget.checked)
@@ -129,6 +133,7 @@ export function AcpConfigOptions({ children, ...props }: DivProps): ReactElement
             />
           ) : (
             <select
+              disabled={readOnly}
               value={option.currentValue}
               onChange={(event) =>
                 void extras.setConfigOption(option.id, event.currentTarget.value)

@@ -26,6 +26,7 @@ export const createAcpThreadState = (): AcpThreadState => ({
 export const createAcpSessionState = (sessionId: string): AcpSessionState => ({
   sessionId,
   runState: "idle",
+  access: { mode: "read-write" },
   messages: [],
   tools: {},
   permissions: {},
@@ -306,6 +307,7 @@ export function reduceAcpThreadState(state: AcpThreadState, event: AcpStateEvent
         ...session,
         ...(event.info ? { info: event.info } : {}),
         ...(event.modes !== undefined ? { modes: event.modes } : {}),
+        access: event.access ?? { mode: "read-write" },
         configOptions: event.configOptions ?? session.configOptions,
         runState: "idle",
         error: undefined,

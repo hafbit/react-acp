@@ -30,6 +30,7 @@ import type {
   AcpClientAdapter,
   AcpClientConnection,
   AcpRuntimeOptions,
+  AcpSessionAccess,
   AcpStateEvent,
   AcpThreadState,
 } from "./types";
@@ -52,6 +53,20 @@ type PendingOutbound = {
   protocolMessageId?: string;
   echoDisabled: boolean;
   confirmed: boolean;
+};
+
+const sessionAccessFromMeta = (meta: unknown): AcpSessionAccess => {
+  if (typeof meta !== "object" || meta === null) return { mode: "read-write" };
+  const hafbit = (meta as Record<string, unknown>)["hafbit"];
+  if (typeof hafbit !== "object" || hafbit === null) return { mode: "read-write" };
+  const access = (hafbit as Record<string, unknown>)["sessionAccess"];
+  if (typeof access !== "object" || access === null) return { mode: "read-write" };
+  const record = access as Record<string, unknown>;
+  if (record["mode"] !== "read-only") return { mode: "read-write" };
+  return {
+    mode: "read-only",
+    ...(typeof record["reason"] === "string" ? { reason: record["reason"] } : {}),
+  };
 };
 
 const comparableContent = (content: ContentBlock): unknown => {
@@ -374,6 +389,7 @@ export class AcpThreadController {
       sessionId: response.sessionId,
       modes: response.modes,
       configOptions: response.configOptions,
+      access: { mode: "read-write" },
     });
     if (token === this.selectionGeneration) {
       this.dispatch({ type: "session.selected", sessionId: response.sessionId });
@@ -472,6 +488,7 @@ export class AcpThreadController {
         info: snapshot.info,
         modes: response.modes,
         configOptions: response.configOptions,
+        access: useResume ? { mode: "read-write" } : sessionAccessFromMeta(response._meta),
       });
     } catch (error) {
       if (generation === this.connectionGeneration) {
@@ -485,6 +502,7 @@ export class AcpThreadController {
 
   /** Permanently deletes a session when the agent advertises support. */
   async deleteSession(sessionId: string): Promise<void> {
+    this.assertSessionWritable(sessionId);
     if (!hasAgentCapability(this.state.capabilities, "delete")) {
       throw new AcpCapabilityError("session/delete");
     }
@@ -501,6 +519,11 @@ export class AcpThreadController {
   /** Explicitly resumes and selects a session. */
   async resumeSession(sessionId: string): Promise<void> {
     await this.selectSession(sessionId, { force: true, method: "resume" });
+  }
+
+  /** Forces session/load again so a read-only snapshot can reacquire write access. */
+  async reloadSession(sessionId: string): Promise<void> {
+    await this.selectSession(sessionId, { force: true, method: "auto" });
   }
 
   /** Closes a session without deleting its cached history. */
@@ -522,6 +545,7 @@ export class AcpThreadController {
 
   /** Sends one serialized ACP prompt turn and records its lifecycle. */
   async prompt(sessionId: string, prompt: ContentBlock[]): Promise<PromptResponse> {
+    this.assertSessionWritable(sessionId);
     if (!this.attachedSessions.has(sessionId)) {
       throw new AcpError(
         "ACP_SESSION_NOT_ATTACHED",
@@ -548,6 +572,7 @@ export class AcpThreadController {
 
   /** Serializes and sends an assistant-ui user message with optimistic projection. */
   async sendMessage(message: AppendMessage): Promise<void> {
+    if (this.state.activeSessionId) this.assertSessionWritable(this.state.activeSessionId);
     const sessionId = this.state.activeSessionId ?? (await this.createSession());
     const prompt = serializeAppendMessage(message, this.state.capabilities);
     const messageId = `local:${sessionId}:${Date.now()}:${Math.random().toString(36).slice(2)}`;
@@ -673,6 +698,7 @@ export class AcpThreadController {
 
   /** Changes a session mode when modes were advertised by the agent. */
   async setMode(sessionId: string, modeId: string): Promise<void> {
+    this.assertSessionWritable(sessionId);
     if (!this.state.sessions[sessionId]?.modes) {
       throw new AcpCapabilityError("session/set_mode");
     }
@@ -687,6 +713,7 @@ export class AcpThreadController {
     configId: string,
     value: string | boolean,
   ): Promise<void> {
+    this.assertSessionWritable(sessionId);
     if (!this.state.sessions[sessionId]?.configOptions.some((option) => option.id === configId)) {
       throw new AcpCapabilityError("session/set_config_option");
     }
@@ -702,6 +729,17 @@ export class AcpThreadController {
       sessionId,
       configOptions: response.configOptions,
     });
+  }
+
+  private assertSessionWritable(sessionId: string): void {
+    const access = this.state.sessions[sessionId]?.access;
+    if (access?.mode !== "read-only") return;
+    throw new AcpError(
+      "ACP_SESSION_READ_ONLY",
+      access.reason
+        ? `ACP session '${sessionId}' is read-only: ${access.reason}.`
+        : `ACP session '${sessionId}' is read-only.`,
+    );
   }
 
   private waitForPermission(
