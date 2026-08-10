@@ -30,7 +30,6 @@ import type {
   AcpClientAdapter,
   AcpClientConnection,
   AcpRuntimeOptions,
-  AcpSessionAccess,
   AcpStateEvent,
   AcpThreadState,
 } from "./types";
@@ -53,20 +52,6 @@ type PendingOutbound = {
   protocolMessageId?: string;
   echoDisabled: boolean;
   confirmed: boolean;
-};
-
-const sessionAccessFromMeta = (meta: unknown): AcpSessionAccess => {
-  if (typeof meta !== "object" || meta === null) return { mode: "read-write" };
-  const hafbit = (meta as Record<string, unknown>)["hafbit"];
-  if (typeof hafbit !== "object" || hafbit === null) return { mode: "read-write" };
-  const access = (hafbit as Record<string, unknown>)["sessionAccess"];
-  if (typeof access !== "object" || access === null) return { mode: "read-write" };
-  const record = access as Record<string, unknown>;
-  if (record["mode"] !== "read-only") return { mode: "read-write" };
-  return {
-    mode: "read-only",
-    ...(typeof record["reason"] === "string" ? { reason: record["reason"] } : {}),
-  };
 };
 
 const comparableContent = (content: ContentBlock): unknown => {
@@ -488,7 +473,9 @@ export class AcpThreadController {
         info: snapshot.info,
         modes: response.modes,
         configOptions: response.configOptions,
-        access: useResume ? { mode: "read-write" } : sessionAccessFromMeta(response._meta),
+        access: this.options.extensions?.sessionAccess?.(
+          useResume ? { method: "resume", response } : { method: "load", response },
+        ) ?? { mode: "read-write" },
       });
     } catch (error) {
       if (generation === this.connectionGeneration) {

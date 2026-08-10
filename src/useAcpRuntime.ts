@@ -109,7 +109,10 @@ export function useAcpRuntime(options: AcpRuntimeOptions): AssistantRuntime {
     [controller, session, state],
   );
 
-  const messageRepository = useMemo(() => projectAcpThreadRepository(state), [state]);
+  const messageRepository = useMemo(
+    () => projectAcpThreadRepository(state, state.activeSessionId, options.extensions),
+    [options.extensions, state],
+  );
 
   const threadList = useMemo(
     () => ({

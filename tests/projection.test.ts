@@ -3,6 +3,42 @@ import { createAcpThreadState, reduceAcpThreadState } from "../src/core/state";
 import { projectAcpThreadMessages } from "../src/core/projection";
 
 describe("ACP message projection", () => {
+  it("仅通过应用扩展按私有 phase 分段，默认不解释 _meta", () => {
+    let state = createAcpThreadState();
+    for (const [text, phase] of [
+      ["plan", "analysis"],
+      ["answer", "final"],
+    ] as const) {
+      state = reduceAcpThreadState(state, {
+        type: "session.update",
+        notification: {
+          sessionId: "s1",
+          update: {
+            sessionUpdate: "agent_message_chunk",
+            messageId: "m1",
+            content: { type: "text", text },
+            _meta: { codex: { phase }, unknown: { kept: true } },
+          },
+        },
+      });
+    }
+
+    expect(projectAcpThreadMessages(state, "s1")[0]?.content).toMatchObject([
+      { type: "text", text: "plananswer" },
+    ]);
+    const projected = projectAcpThreadMessages(state, "s1", {
+      messagePhase(notification) {
+        const meta = notification.update._meta as { codex?: { phase?: unknown } } | undefined;
+        return typeof meta?.codex?.phase === "string" ? meta.codex.phase : undefined;
+      },
+    });
+    expect(projected[0]?.content).toMatchObject([
+      { type: "text", text: "plan", providerMetadata: { acp: { phase: "analysis" } } },
+      { type: "text", text: "answer", providerMetadata: { acp: { phase: "final" } } },
+    ]);
+    expect(JSON.stringify(projected[0]?.metadata?.custom?.acp)).toContain('"unknown"');
+  });
+
   it("投影文本、reasoning、音频、resource 和原始元数据", () => {
     let state = createAcpThreadState();
     for (const update of [

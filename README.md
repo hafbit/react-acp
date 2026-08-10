@@ -56,6 +56,10 @@ function AgentRuntime({ agent, workspace, children }: Props) {
 
 `useAcpRuntimeExtras()` 提供 `reconnect`、完整分页的 `refreshSessions` 和 session 生命周期方法。消息 metadata 只保留该消息自己的完整 ACP notifications；session 最新状态、工具通知和未知扩展通过 extras 中的公开 core state 读取。
 
+应用可以通过 `extensions` 注入 `AcpRuntimeExtensionAdapter`，解释自身拥有的私有
+`_meta`：`sessionAccess` 决定 load/resume 后的读写能力，`messagePhase` 决定消息分段。
+本包默认不识别任何厂商命名空间，未知字段和原始 `_meta` 始终保留。
+
 ## 入口与 API
 
 | 入口                           | 适用场景                         | 主要导出                                                                                 |

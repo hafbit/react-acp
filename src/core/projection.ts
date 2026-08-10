@@ -5,6 +5,7 @@ import type {
   AcpMessagePiece,
   AcpMessageRecord,
   AcpProjectedMessage,
+  AcpRuntimeExtensionAdapter,
   AcpSessionState,
   AcpThreadState,
   AcpToolCallRecord,
@@ -32,12 +33,12 @@ const objectRecord = (value: unknown): Record<string, unknown> | undefined =>
     ? (value as Record<string, unknown>)
     : undefined;
 
-const piecePhase = (piece: AcpMessagePiece): string | undefined => {
+const piecePhase = (
+  piece: AcpMessagePiece,
+  extensions: Pick<AcpRuntimeExtensionAdapter, "messagePhase"> | undefined,
+): string | undefined => {
   if (piece.type !== "content") return undefined;
-  const update = objectRecord(piece.notification?.update);
-  const meta = objectRecord(update?._meta);
-  const codex = objectRecord(meta?.codex);
-  return typeof codex?.phase === "string" ? codex.phase : undefined;
+  return piece.notification ? extensions?.messagePhase?.(piece.notification) : undefined;
 };
 
 const acpPartMetadata = (part: ProjectedTextPart): AcpPartMetadata | undefined => {
@@ -241,6 +242,7 @@ const projectPiece = (
 const projectMessagePieces = (
   session: AcpSessionState,
   messages: readonly AcpMessageRecord[],
+  extensions: Pick<AcpRuntimeExtensionAdapter, "messagePhase"> | undefined,
 ): ProjectedPart[] => {
   const projected: ProjectedPart[] = [];
   for (const message of messages) {
@@ -261,7 +263,7 @@ const projectMessagePieces = (
       } else {
         if (activeType !== type) activePhase = undefined;
         activeType = type;
-        activePhase = piecePhase(piece) ?? activePhase;
+        activePhase = piecePhase(piece, extensions) ?? activePhase;
       }
 
       const next = projectPiece(session, message.id, piece, rawPieceIndex, activePhase);
@@ -323,6 +325,7 @@ const statusForMessage = (message: AcpMessageRecord) => {
 const projectMessage = (
   session: AcpSessionState,
   messages: readonly [AcpMessageRecord, ...AcpMessageRecord[]],
+  extensions: Pick<AcpRuntimeExtensionAdapter, "messagePhase"> | undefined,
 ): AcpProjectedMessage => {
   const message = messages[0];
   const latest = messages.at(-1) ?? message;
@@ -345,7 +348,7 @@ const projectMessage = (
     id: message.id,
     role: message.role,
     createdAt: new Date(message.createdAt),
-    content: projectMessagePieces(session, messages),
+    content: projectMessagePieces(session, messages, extensions),
     ...(statusForMessage(latest) ? { status: statusForMessage(latest) } : {}),
     metadata: {
       isOptimistic: messages.some((candidate) => candidate.optimistic),
@@ -371,6 +374,7 @@ const projectMessage = (
 export function projectAcpThreadMessages(
   state: AcpThreadState,
   sessionId = state.activeSessionId,
+  extensions?: Pick<AcpRuntimeExtensionAdapter, "messagePhase">,
 ): AcpProjectedMessage[] {
   if (!sessionId) return [];
   const session = state.sessions[sessionId];
@@ -380,7 +384,7 @@ export function projectAcpThreadMessages(
     const message = session.messages[index];
     if (!message) break;
     if (message.role === "user") {
-      projected.push(projectMessage(session, [message]));
+      projected.push(projectMessage(session, [message], extensions));
       index += 1;
       continue;
     }
@@ -391,7 +395,7 @@ export function projectAcpThreadMessages(
       assistantMessages.push(session.messages[nextIndex] as AcpMessageRecord);
       nextIndex += 1;
     }
-    projected.push(projectMessage(session, assistantMessages));
+    projected.push(projectMessage(session, assistantMessages, extensions));
     index = nextIndex;
   }
   return projected;
@@ -401,6 +405,9 @@ export function projectAcpThreadMessages(
 export function projectAcpThreadRepository(
   state: AcpThreadState,
   sessionId = state.activeSessionId,
+  extensions?: Pick<AcpRuntimeExtensionAdapter, "messagePhase">,
 ): ExportedMessageRepository {
-  return ExportedMessageRepository.fromArray(projectAcpThreadMessages(state, sessionId));
+  return ExportedMessageRepository.fromArray(
+    projectAcpThreadMessages(state, sessionId, extensions),
+  );
 }

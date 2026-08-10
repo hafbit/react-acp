@@ -75,6 +75,47 @@ class ReconnectingAdapter implements AcpClientAdapter {
 }
 
 describe("AcpThreadController conformance fixture", () => {
+  it("仅通过应用扩展解释 session access，默认不识别私有 _meta", async () => {
+    const metadata = {
+      hafbit: { sessionAccess: { mode: "read-only", reason: "active elsewhere" } },
+      unknown: { kept: true },
+    };
+    const defaultAdapter = new ConformanceAdapter();
+    defaultAdapter.connection.loadSession = vi.fn(async () => ({ _meta: metadata }));
+    const defaultController = new AcpThreadController({
+      connection: { type: "adapter", adapter: defaultAdapter },
+      workspace: { cwd: "/workspace" },
+    });
+    await defaultController.connect();
+    await defaultController.selectSession("s1");
+    expect(defaultController.getState().sessions.s1?.access).toEqual({ mode: "read-write" });
+
+    const extendedAdapter = new ConformanceAdapter();
+    extendedAdapter.connection.loadSession = vi.fn(async () => ({ _meta: metadata }));
+    const sessionAccess = vi.fn(({ response }: { response: { _meta?: unknown } }) => {
+      const meta = response._meta as typeof metadata;
+      return {
+        mode: "read-only" as const,
+        reason: meta.hafbit.sessionAccess.reason,
+      };
+    });
+    const extendedController = new AcpThreadController({
+      connection: { type: "adapter", adapter: extendedAdapter },
+      workspace: { cwd: "/workspace" },
+      extensions: { sessionAccess },
+    });
+    await extendedController.connect();
+    await extendedController.selectSession("s1");
+    expect(sessionAccess).toHaveBeenCalledWith({
+      method: "load",
+      response: { _meta: metadata },
+    });
+    expect(extendedController.getState().sessions.s1?.access).toEqual({
+      mode: "read-only",
+      reason: "active elsewhere",
+    });
+  });
+
   it("初始化、遍历 session/list 分页并加载历史", async () => {
     const adapter = new ConformanceAdapter();
     const onThreadIdChange = vi.fn();

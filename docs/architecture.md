@@ -44,6 +44,7 @@ flowchart LR
 - permission 映射为 tool approval；plan、非 HTTP resource 和未知事件使用命名 `data-acp-*` part。
 - `metadata.custom.acp` 只包含当前消息的 session ID、协议 message ID、完整原始 notifications、stop reason 和错误。
 - 乐观用户消息保存真实 prompt content；live `user_message_chunk` 内容匹配时确认同一条本地消息并记录 `protocolMessageId`，保持 assistant-ui message ID 稳定。
+- `AcpRuntimeExtensionAdapter` 是应用私有 `_meta` 的唯一解释入口；core 默认不依赖 Hafbit、Codex 或其他厂商字段。
 
 ## React 配置身份
 

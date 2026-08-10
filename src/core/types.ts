@@ -276,6 +276,19 @@ export type AcpSessionAccess = {
   reason?: string;
 };
 
+/** Context supplied when an extension determines access for an attached session. */
+export type AcpSessionAccessContext =
+  | { method: "load"; response: LoadSessionResponse }
+  | { method: "resume"; response: ResumeSessionResponse };
+
+/** Optional application-owned interpretations of opaque ACP extension metadata. */
+export type AcpRuntimeExtensionAdapter = {
+  /** Resolves access from an attach response. Defaults to read-write. */
+  sessionAccess?(context: AcpSessionAccessContext): AcpSessionAccess | undefined;
+  /** Returns an application-defined grouping phase for one raw session notification. */
+  messagePhase?(notification: SessionNotification): string | undefined;
+};
+
 /** Protocol-authoritative state retained for one ACP session. */
 export type AcpSessionState = {
   /** ACP session identifier. */
@@ -477,6 +490,8 @@ export type AcpRuntimeOptions = ExternalStoreSharedOptions & {
   clientServices?: AcpClientServices;
   /** Provider identity: additional client capabilities. Rebuild with a React key to change. */
   clientCapabilities?: ClientCapabilities;
+  /** Provider identity: application-owned interpretation of opaque ACP extensions. */
+  extensions?: AcpRuntimeExtensionAdapter;
   /** Controlled ACP session ID to select after connection. */
   threadId?: string;
   /** Called when the active ACP session changes. */
