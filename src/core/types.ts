@@ -268,6 +268,14 @@ export type AcpPermissionRecord = {
 /** Lifecycle state of the current prompt turn in an ACP session. */
 export type AcpSessionRunState = "idle" | "loading" | "running" | "cancelling" | "error";
 
+/** Whether the current ACP attachment may mutate its native session. */
+export type AcpSessionAccess = {
+  /** Read-only attachments can display history but must not issue mutating requests. */
+  mode: "read-write" | "read-only";
+  /** Agent-specific reason for restricting the attachment. */
+  reason?: string;
+};
+
 /** Protocol-authoritative state retained for one ACP session. */
 export type AcpSessionState = {
   /** ACP session identifier. */
@@ -276,6 +284,8 @@ export type AcpSessionState = {
   info?: SessionInfo;
   /** Current load, prompt, cancellation, or failure state. */
   runState: AcpSessionRunState;
+  /** Access negotiated while creating, loading, or resuming the session. */
+  access: AcpSessionAccess;
   /** Messages in protocol order. */
   messages: readonly AcpMessageRecord[];
   /** Tool calls indexed by tool call ID. */
@@ -340,6 +350,7 @@ export type AcpStateEvent =
       info?: SessionInfo;
       modes?: SessionModeState | null;
       configOptions?: readonly SessionConfigOption[] | null;
+      access?: AcpSessionAccess;
     }
   | { type: "session.selected"; sessionId: string | undefined }
   | { type: "session.deleted"; sessionId: string }
@@ -406,6 +417,8 @@ export type AcpRuntimeExtras = {
   logout(): Promise<void>;
   /** Loads or resumes a session and makes it active. */
   selectSession(sessionId: string): Promise<void>;
+  /** Forces session/load again so a restricted attachment can reacquire write access. */
+  reloadSession(sessionId: string): Promise<void>;
   /** Creates and selects a new ACP session. */
   createSession(): Promise<string>;
   /** Permanently deletes a session when supported by the agent. */
