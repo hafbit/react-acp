@@ -46,11 +46,12 @@ const updateSession = (
   return {
     ...state,
     sessions: { ...state.sessions, [sessionId]: update(current) },
-    sessionOrder: state.preparedSessionId === sessionId
-      ? state.sessionOrder.filter((id) => id !== sessionId)
-      : state.sessionOrder.includes(sessionId)
-      ? state.sessionOrder
-      : [...state.sessionOrder, sessionId],
+    sessionOrder:
+      state.preparedSessionId === sessionId
+        ? state.sessionOrder.filter((id) => id !== sessionId)
+        : state.sessionOrder.includes(sessionId)
+          ? state.sessionOrder
+          : [...state.sessionOrder, sessionId],
   };
 };
 
