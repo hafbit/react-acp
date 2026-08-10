@@ -46,7 +46,9 @@ const updateSession = (
   return {
     ...state,
     sessions: { ...state.sessions, [sessionId]: update(current) },
-    sessionOrder: state.sessionOrder.includes(sessionId)
+    sessionOrder: state.preparedSessionId === sessionId
+      ? state.sessionOrder.filter((id) => id !== sessionId)
+      : state.sessionOrder.includes(sessionId)
       ? state.sessionOrder
       : [...state.sessionOrder, sessionId],
   };
@@ -294,13 +296,25 @@ export function reduceAcpThreadState(state: AcpThreadState, event: AcpStateEvent
       const active = state.activeSessionId;
       if (active && !sessions[active] && state.sessions[active])
         sessions[active] = state.sessions[active];
-      const listedOrder = event.sessions.map((info) => info.sessionId);
+      const listedOrder = event.sessions
+        .map((info) => info.sessionId)
+        .filter((sessionId) => sessionId !== state.preparedSessionId);
       return {
         ...state,
         sessions,
         sessionOrder:
-          active && !listedOrder.includes(active) ? [...listedOrder, active] : listedOrder,
+          active && active !== state.preparedSessionId && !listedOrder.includes(active)
+            ? [...listedOrder, active]
+            : listedOrder,
       };
+    }
+    case "session.preparing": {
+      const prepared = {
+        ...state,
+        preparedSessionId: event.sessionId,
+        sessionOrder: state.sessionOrder.filter((id) => id !== event.sessionId),
+      };
+      return updateSession(prepared, event.sessionId, (session) => session);
     }
     case "session.attached":
       return updateSession(state, event.sessionId, (session) => ({
@@ -312,6 +326,26 @@ export function reduceAcpThreadState(state: AcpThreadState, event: AcpStateEvent
         runState: "idle",
         error: undefined,
       }));
+    case "session.committed":
+      return {
+        ...state,
+        preparedSessionId:
+          state.preparedSessionId === event.sessionId ? undefined : state.preparedSessionId,
+        sessionOrder: state.sessionOrder.includes(event.sessionId)
+          ? state.sessionOrder
+          : [...state.sessionOrder, event.sessionId],
+      };
+    case "session.prepared_cleared":
+      if (state.preparedSessionId !== event.sessionId) return state;
+      const remainingSessions = { ...state.sessions };
+      delete remainingSessions[event.sessionId];
+      return {
+        ...state,
+        sessions: remainingSessions,
+        preparedSessionId: undefined,
+        sessionOrder: state.sessionOrder.filter((id) => id !== event.sessionId),
+        ...(state.activeSessionId === event.sessionId ? { activeSessionId: undefined } : {}),
+      };
     case "session.selected":
       return { ...state, activeSessionId: event.sessionId };
     case "session.deleted": {
@@ -321,6 +355,7 @@ export function reduceAcpThreadState(state: AcpThreadState, event: AcpStateEvent
         ...state,
         sessions,
         sessionOrder: state.sessionOrder.filter((id) => id !== event.sessionId),
+        ...(state.preparedSessionId === event.sessionId ? { preparedSessionId: undefined } : {}),
         ...(state.activeSessionId === event.sessionId ? { activeSessionId: undefined } : {}),
       };
     }

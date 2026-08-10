@@ -348,6 +348,8 @@ export type AcpThreadState = {
   sessions: Readonly<Record<string, AcpSessionState>>;
   /** Stable display order for known session IDs. */
   sessionOrder: readonly string[];
+  /** Active draft session intentionally omitted from visible thread lists. */
+  preparedSessionId?: string;
   /** Session projected as the active assistant-ui thread. */
   activeSessionId?: string;
 };
@@ -357,6 +359,7 @@ export type AcpStateEvent =
   | { type: "connection.status"; status: AcpConnectionStatus; error?: unknown }
   | { type: "connection.initialized"; response: InitializeResponse }
   | { type: "sessions.listed"; sessions: readonly SessionInfo[] }
+  | { type: "session.preparing"; sessionId: string }
   | {
       type: "session.attached";
       sessionId: string;
@@ -365,6 +368,8 @@ export type AcpStateEvent =
       configOptions?: readonly SessionConfigOption[] | null;
       access?: AcpSessionAccess;
     }
+  | { type: "session.committed"; sessionId: string }
+  | { type: "session.prepared_cleared"; sessionId: string }
   | { type: "session.selected"; sessionId: string | undefined }
   | { type: "session.deleted"; sessionId: string }
   | { type: "session.loading"; sessionId: string; clearHistory: boolean }
@@ -434,6 +439,8 @@ export type AcpRuntimeExtras = {
   reloadSession(sessionId: string): Promise<void>;
   /** Creates and selects a new ACP session. */
   createSession(): Promise<string>;
+  /** Creates or restores a hidden session that becomes visible on first send. */
+  prepareSession(): Promise<string>;
   /** Permanently deletes a session when supported by the agent. */
   deleteSession(sessionId: string): Promise<void>;
   /** Resumes a session when supported by the agent. */
@@ -496,6 +503,10 @@ export type AcpRuntimeOptions = ExternalStoreSharedOptions & {
   threadId?: string;
   /** Called when the active ACP session changes. */
   onThreadIdChange?: (threadId: string | undefined) => void;
+  /** ACP session ID to restore without exposing it in visible thread lists. */
+  preparedSessionId?: string;
+  /** Called when a hidden prepared session is created, committed, or discarded. */
+  onPreparedSessionIdChange?: (sessionId: string | undefined) => void;
   /** Receives connection and prompt failures. */
   onError?: (error: unknown) => void;
   /** Additional assistant-ui runtime adapters. */

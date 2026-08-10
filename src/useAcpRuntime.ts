@@ -53,6 +53,8 @@ export function useAcpRuntime(options: AcpRuntimeOptions): AssistantRuntime {
         ...options,
         onError: (error) => latestOptions.current.onError?.(error),
         onThreadIdChange: (threadId) => latestOptions.current.onThreadIdChange?.(threadId),
+        onPreparedSessionIdChange: (sessionId) =>
+          latestOptions.current.onPreparedSessionIdChange?.(sessionId),
       }),
   );
   const state = useControllerState(controller);
@@ -86,6 +88,7 @@ export function useAcpRuntime(options: AcpRuntimeOptions): AssistantRuntime {
       selectSession: (sessionId) => controller.selectSession(sessionId),
       reloadSession: (sessionId) => controller.reloadSession(sessionId),
       createSession: () => controller.createSession(),
+      prepareSession: () => controller.prepareSession(),
       deleteSession: (sessionId) => controller.deleteSession(sessionId),
       resumeSession: (sessionId) => controller.resumeSession(sessionId),
       closeSession: (sessionId) => controller.closeSession(sessionId),

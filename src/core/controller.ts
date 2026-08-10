@@ -127,6 +127,7 @@ export class AcpThreadController {
   private readonly attachmentPromises = new Map<string, Promise<void>>();
   private readonly loadingSessions = new Set<string>();
   private readonly pendingOutbound = new Map<string, PendingOutbound>();
+  private prepareSessionPromise?: Promise<string>;
   private connectionGeneration = 0;
   private selectionGeneration = 0;
   private settledActiveSessionId?: string;
@@ -135,6 +136,9 @@ export class AcpThreadController {
   /** Creates a controller and validates the configured workspace paths. */
   constructor(private readonly options: AcpRuntimeOptions) {
     validateWorkspace(options.workspace);
+    if (options.preparedSessionId) {
+      this.state = { ...this.state, preparedSessionId: options.preparedSessionId };
+    }
   }
 
   /** Returns the current immutable thread-state snapshot. */
@@ -335,6 +339,9 @@ export class AcpThreadController {
       await this.attachSession(activeSessionId, { force: true });
       this.settledActiveSessionId = activeSessionId;
     } catch (error) {
+      if (this.state.preparedSessionId === activeSessionId) {
+        this.discardPreparedSession(activeSessionId);
+      }
       this.reportError(error);
     }
   }
@@ -382,6 +389,76 @@ export class AcpThreadController {
       this.options.onThreadIdChange?.(response.sessionId);
     }
     return response.sessionId;
+  }
+
+  /** Creates or restores a session without exposing it in visible thread lists. */
+  async prepareSession(): Promise<string> {
+    if (this.prepareSessionPromise) return this.prepareSessionPromise;
+    const pending = this.performPrepareSession().finally(() => {
+      if (this.prepareSessionPromise === pending) this.prepareSessionPromise = undefined;
+    });
+    this.prepareSessionPromise = pending;
+    return pending;
+  }
+
+  private async performPrepareSession(): Promise<string> {
+    const preparedSessionId = this.state.preparedSessionId;
+    if (preparedSessionId) {
+      if (
+        this.state.activeSessionId === preparedSessionId &&
+        this.attachedSessions.has(preparedSessionId)
+      ) {
+        return preparedSessionId;
+      }
+      try {
+        await this.selectSession(preparedSessionId, { notify: false });
+        return preparedSessionId;
+      } catch {
+        this.discardPreparedSession(preparedSessionId);
+      }
+    } else if (this.state.activeSessionId) {
+      return this.state.activeSessionId;
+    }
+
+    const token = ++this.selectionGeneration;
+    const generation = this.connectionGeneration;
+    const response = await this.runAgentRequest(() =>
+      this.requireConnection().newSession(
+        buildSessionRequest(this.options.workspace, this.state.capabilities),
+      ),
+    );
+    if (generation !== this.connectionGeneration) {
+      throw new AcpError("ACP_DISCONNECTED", "ACP connection changed while preparing a session.");
+    }
+    this.dispatch({ type: "session.preparing", sessionId: response.sessionId });
+    this.attachedSessions.add(response.sessionId);
+    this.dispatch({
+      type: "session.attached",
+      sessionId: response.sessionId,
+      modes: response.modes,
+      configOptions: response.configOptions,
+      access: { mode: "read-write" },
+    });
+    if (token === this.selectionGeneration) {
+      this.dispatch({ type: "session.selected", sessionId: response.sessionId });
+      this.settledActiveSessionId = response.sessionId;
+    }
+    this.options.onPreparedSessionIdChange?.(response.sessionId);
+    return response.sessionId;
+  }
+
+  private commitPreparedSession(sessionId: string): void {
+    if (this.state.preparedSessionId !== sessionId) return;
+    this.dispatch({ type: "session.committed", sessionId });
+    this.settledActiveSessionId = sessionId;
+    this.options.onPreparedSessionIdChange?.(undefined);
+    this.options.onThreadIdChange?.(sessionId);
+  }
+
+  private discardPreparedSession(sessionId: string): void {
+    this.attachedSessions.delete(sessionId);
+    this.dispatch({ type: "session.prepared_cleared", sessionId });
+    this.options.onPreparedSessionIdChange?.(undefined);
   }
 
   /** Selects a session; only the latest in-flight selection may become active. */
@@ -559,9 +636,10 @@ export class AcpThreadController {
 
   /** Serializes and sends an assistant-ui user message with optimistic projection. */
   async sendMessage(message: AppendMessage): Promise<void> {
-    if (this.state.activeSessionId) this.assertSessionWritable(this.state.activeSessionId);
-    const sessionId = this.state.activeSessionId ?? (await this.createSession());
+    const sessionId = this.state.activeSessionId ?? (await this.prepareSession());
+    this.assertSessionWritable(sessionId);
     const prompt = serializeAppendMessage(message, this.state.capabilities);
+    this.commitPreparedSession(sessionId);
     const messageId = `local:${sessionId}:${Date.now()}:${Math.random().toString(36).slice(2)}`;
     this.dispatch({
       type: "message.optimistic",
