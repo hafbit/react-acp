@@ -11,6 +11,13 @@ import type {
 } from "./types";
 
 type ProjectedPart = Exclude<AcpProjectedMessage["content"], string>[number];
+type ProjectedTextPart = Extract<ProjectedPart, { type: "text" | "reasoning" }>;
+
+type AcpPartMetadata = {
+  phase: string | null;
+  rawPieceIndices: number[];
+  rawPieceRefs: Array<{ messageId: string; pieceIndex: number }>;
+};
 
 const dataPart = (name: string, data: unknown): ProjectedPart => ({
   type: "data",
@@ -19,6 +26,43 @@ const dataPart = (name: string, data: unknown): ProjectedPart => ({
 });
 
 const toDataUrl = (mimeType: string, data: string) => `data:${mimeType};base64,${data}`;
+
+const objectRecord = (value: unknown): Record<string, unknown> | undefined =>
+  value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
+
+const piecePhase = (piece: AcpMessagePiece): string | undefined => {
+  if (piece.type !== "content") return undefined;
+  const update = objectRecord(piece.notification?.update);
+  const meta = objectRecord(update?._meta);
+  const codex = objectRecord(meta?.codex);
+  return typeof codex?.phase === "string" ? codex.phase : undefined;
+};
+
+const acpPartMetadata = (part: ProjectedTextPart): AcpPartMetadata | undefined => {
+  const metadata = objectRecord(part.providerMetadata?.acp);
+  const rawPieceIndices = metadata?.rawPieceIndices;
+  const rawPieceRefs = metadata?.rawPieceRefs;
+  if (!Array.isArray(rawPieceIndices) || !rawPieceIndices.every(Number.isInteger)) return undefined;
+  if (
+    !Array.isArray(rawPieceRefs) ||
+    !rawPieceRefs.every(
+      (reference) =>
+        typeof objectRecord(reference)?.messageId === "string" &&
+        Number.isInteger(objectRecord(reference)?.pieceIndex),
+    )
+  ) {
+    return undefined;
+  }
+  const phase = metadata?.phase;
+  if (phase !== null && typeof phase !== "string") return undefined;
+  return {
+    phase,
+    rawPieceIndices: rawPieceIndices as number[],
+    rawPieceRefs: rawPieceRefs as Array<{ messageId: string; pieceIndex: number }>,
+  };
+};
 
 function projectContent(content: ContentBlock, reasoning: boolean): ProjectedPart {
   switch (content.type) {
@@ -152,13 +196,32 @@ function projectTool(tool: AcpToolCallRecord): ProjectedPart {
   };
 }
 
-const projectPiece = (session: AcpSessionState, piece: AcpMessagePiece): ProjectedPart => {
+const projectPiece = (
+  session: AcpSessionState,
+  messageId: string,
+  piece: AcpMessagePiece,
+  rawPieceIndex: number,
+  phase: string | undefined,
+): ProjectedPart => {
   switch (piece.type) {
-    case "content":
-      return projectContent(
+    case "content": {
+      const projected = projectContent(
         piece.content,
         piece.notification?.update.sessionUpdate === "agent_thought_chunk",
       );
+      if (projected.type !== "text" && projected.type !== "reasoning") return projected;
+      return {
+        ...projected,
+        providerMetadata: {
+          ...projected.providerMetadata,
+          acp: {
+            phase: phase ?? null,
+            rawPieceIndices: [rawPieceIndex],
+            rawPieceRefs: [{ messageId, pieceIndex: rawPieceIndex }],
+          },
+        },
+      };
+    }
     case "tool": {
       const tool = session.tools[piece.toolCallId];
       return tool
@@ -173,6 +236,67 @@ const projectPiece = (session: AcpSessionState, piece: AcpMessagePiece): Project
     case "unsupported":
       return dataPart("acp-unsupported", piece.notification.update);
   }
+};
+
+const projectMessagePieces = (
+  session: AcpSessionState,
+  messages: readonly AcpMessageRecord[],
+): ProjectedPart[] => {
+  const projected: ProjectedPart[] = [];
+  for (const message of messages) {
+    let activeType: "text" | "reasoning" | undefined;
+    let activePhase: string | undefined;
+    for (const [rawPieceIndex, piece] of message.pieces.entries()) {
+      const content = piece.type === "content" ? piece.content : undefined;
+      const type =
+        content?.type === "text"
+          ? piece.type === "content" &&
+            piece.notification?.update.sessionUpdate === "agent_thought_chunk"
+            ? "reasoning"
+            : "text"
+          : undefined;
+      if (!type) {
+        activeType = undefined;
+        activePhase = undefined;
+      } else {
+        if (activeType !== type) activePhase = undefined;
+        activeType = type;
+        activePhase = piecePhase(piece) ?? activePhase;
+      }
+
+      const next = projectPiece(session, message.id, piece, rawPieceIndex, activePhase);
+      const previous = projected.at(-1);
+      const canMerge =
+        message.role === "assistant" &&
+        (next.type === "text" || next.type === "reasoning") &&
+        previous?.type === next.type;
+      if (!canMerge) {
+        projected.push(next);
+        continue;
+      }
+
+      const previousMetadata = acpPartMetadata(previous);
+      const nextMetadata = acpPartMetadata(next);
+      if (!previousMetadata || !nextMetadata || previousMetadata.phase !== nextMetadata.phase) {
+        projected.push(next);
+        continue;
+      }
+
+      projected[projected.length - 1] = {
+        ...previous,
+        text: previous.text + next.text,
+        providerMetadata: {
+          ...previous.providerMetadata,
+          acp: {
+            phase: nextMetadata.phase,
+            rawPieceIndices: [...previousMetadata.rawPieceIndices, ...nextMetadata.rawPieceIndices],
+            rawPieceRefs: [...previousMetadata.rawPieceRefs, ...nextMetadata.rawPieceRefs],
+          },
+        },
+      };
+    }
+  }
+  return projected;
 };
 
 const statusForMessage = (message: AcpMessageRecord) => {
@@ -198,26 +322,45 @@ const statusForMessage = (message: AcpMessageRecord) => {
 
 const projectMessage = (
   session: AcpSessionState,
-  message: AcpMessageRecord,
+  messages: readonly [AcpMessageRecord, ...AcpMessageRecord[]],
 ): AcpProjectedMessage => {
+  const message = messages[0];
+  const latest = messages.at(-1) ?? message;
+  const messageIds = messages.map((candidate) => candidate.id);
+  const protocolMessageIds = [
+    ...new Set(
+      messages.flatMap((candidate) =>
+        candidate.protocolMessageId ? [candidate.protocolMessageId] : [],
+      ),
+    ),
+  ];
+  let latestError: unknown;
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const candidate = messages[index];
+    if (candidate?.error === undefined) continue;
+    latestError = candidate.error;
+    break;
+  }
   return {
     id: message.id,
     role: message.role,
     createdAt: new Date(message.createdAt),
-    content: message.pieces.map((piece) => projectPiece(session, piece)),
-    ...(statusForMessage(message) ? { status: statusForMessage(message) } : {}),
+    content: projectMessagePieces(session, messages),
+    ...(statusForMessage(latest) ? { status: statusForMessage(latest) } : {}),
     metadata: {
-      isOptimistic: message.optimistic,
+      isOptimistic: messages.some((candidate) => candidate.optimistic),
       custom: {
         acp: {
           sessionId: session.sessionId,
           protocolMessageId: message.protocolMessageId,
-          notifications: message.rawNotifications,
+          messageIds,
+          protocolMessageIds,
+          notifications: messages.flatMap((candidate) => candidate.rawNotifications),
           stopReason:
-            message.status?.type === "complete" || message.status?.type === "incomplete"
-              ? message.status.stopReason
+            latest.status?.type === "complete" || latest.status?.type === "incomplete"
+              ? latest.status.stopReason
               : undefined,
-          error: message.error ? errorMessage(message.error) : undefined,
+          error: latestError ? errorMessage(latestError) : undefined,
         },
       },
     },
@@ -232,7 +375,26 @@ export function projectAcpThreadMessages(
   if (!sessionId) return [];
   const session = state.sessions[sessionId];
   if (!session) return [];
-  return session.messages.map((message) => projectMessage(session, message));
+  const projected: AcpProjectedMessage[] = [];
+  for (let index = 0; index < session.messages.length;) {
+    const message = session.messages[index];
+    if (!message) break;
+    if (message.role === "user") {
+      projected.push(projectMessage(session, [message]));
+      index += 1;
+      continue;
+    }
+
+    const assistantMessages: [AcpMessageRecord, ...AcpMessageRecord[]] = [message];
+    let nextIndex = index + 1;
+    while (session.messages[nextIndex]?.role === "assistant") {
+      assistantMessages.push(session.messages[nextIndex] as AcpMessageRecord);
+      nextIndex += 1;
+    }
+    projected.push(projectMessage(session, assistantMessages));
+    index = nextIndex;
+  }
+  return projected;
 }
 
 /** Projects all ACP sessions into an assistant-ui exported message repository. */
