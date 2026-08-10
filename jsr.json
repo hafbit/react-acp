@@ -8,6 +8,12 @@
     "./primitives": "./src/primitives/index.ts"
   },
   "publish": {
-    "include": ["src/**/*.ts", "src/**/*.tsx", "README.md", "LICENSE", "package.json"]
+    "include": [
+      "src/**/*.ts",
+      "src/**/*.tsx",
+      "README.md",
+      "LICENSE",
+      "package.json"
+    ]
   }
 }

@@ -10,4 +10,12 @@ export default {
   tabWidth: 2,
   trailingComma: "all",
   useTabs: false,
+  overrides: [
+    {
+      files: "jsr.json",
+      options: {
+        printWidth: 80,
+      },
+    },
+  ],
 };
