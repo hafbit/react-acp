@@ -102,7 +102,7 @@ const ensureMessage = (
     {
       ...next,
       lastChunk: { role, messageId },
-      ...(role === "assistant" ? { lastAssistantMessageId: messageId } : {}),
+      lastAssistantMessageId: role === "assistant" ? messageId : undefined,
     },
     messageId,
   ];
