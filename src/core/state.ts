@@ -8,6 +8,7 @@ import type {
 import type {
   AcpMessagePiece,
   AcpMessageRecord,
+  AcpRuntimeExtensionAdapter,
   AcpSessionState,
   AcpStateEvent,
   AcpThreadState,
@@ -127,6 +128,29 @@ const appendMessageNotification = (
     rawNotifications: [...message.rawNotifications, notification],
   }));
 
+const finiteTimestamp = (value: number | undefined): number | undefined =>
+  value !== undefined && Number.isFinite(value) ? value : undefined;
+
+const applyMessageState = (
+  session: AcpSessionState,
+  messageId: string,
+  notification: SessionNotification,
+  extensions: AcpRuntimeExtensionAdapter | undefined,
+): AcpSessionState => {
+  const state = extensions?.messageState?.(notification);
+  if (!state) return session;
+  const sentAt = finiteTimestamp(state.sentAt);
+  const finishedAt = finiteTimestamp(state.finishedAt);
+  if (sentAt === undefined && finishedAt === undefined && state.status === undefined)
+    return session;
+  return patchMessage(session, messageId, (message) => ({
+    ...message,
+    ...(sentAt !== undefined ? { sentAt } : {}),
+    ...(finishedAt !== undefined ? { finishedAt } : {}),
+    ...(state.status !== undefined ? { status: state.status } : {}),
+  }));
+};
+
 const mergeTool = (
   existing: AcpToolCallRecord | undefined,
   incoming: ToolCall | ToolCallUpdate,
@@ -159,6 +183,7 @@ const recordLatestNotification = (
 const reduceNotification = (
   session: AcpSessionState,
   notification: SessionNotification,
+  extensions?: AcpRuntimeExtensionAdapter,
 ): AcpSessionState => {
   const update = notification.update;
   switch (update.sessionUpdate) {
@@ -172,7 +197,12 @@ const reduceNotification = (
         content: update.content,
         notification,
       });
-      return appendMessageNotification(withPiece, messageId, notification);
+      return applyMessageState(
+        appendMessageNotification(withPiece, messageId, notification),
+        messageId,
+        notification,
+        extensions,
+      );
     }
     case "tool_call":
     case "tool_call_update": {
@@ -190,7 +220,11 @@ const reduceNotification = (
       const linked = alreadyLinked
         ? current
         : appendPiece(current, messageId, { type: "tool", toolCallId: update.toolCallId });
-      return { ...linked, tools: nextTools, lastAssistantMessageId: messageId };
+      return {
+        ...applyMessageState(linked, messageId, notification, extensions),
+        tools: nextTools,
+        lastAssistantMessageId: messageId,
+      };
     }
     case "plan": {
       let current = session;
@@ -202,7 +236,12 @@ const reduceNotification = (
         notification,
       });
       return recordLatestNotification(
-        appendMessageNotification({ ...withPlan, plan: update }, messageId, notification),
+        applyMessageState(
+          appendMessageNotification({ ...withPlan, plan: update }, messageId, notification),
+          messageId,
+          notification,
+          extensions,
+        ),
         notification,
       );
     }
@@ -247,8 +286,14 @@ const reduceNotification = (
         type: "unsupported",
         notification,
       });
+      const withState = applyMessageState(
+        appendMessageNotification(withUnsupported, messageId, notification),
+        messageId,
+        notification,
+        extensions,
+      );
       return {
-        ...appendMessageNotification(withUnsupported, messageId, notification),
+        ...withState,
         unhandledNotifications: [...current.unhandledNotifications, notification],
       };
     }
@@ -265,12 +310,26 @@ const finalizeAssistantMessage = (
   if (!session.lastAssistantMessageId) return session;
   return patchMessage(session, session.lastAssistantMessageId, (message) => ({
     ...message,
+    finishedAt: Date.now(),
     status: statusFromStopReason(stopReason),
   }));
 };
 
+const failAssistantMessage = (session: AcpSessionState, error: unknown): AcpSessionState => {
+  if (!session.lastAssistantMessageId) return session;
+  return patchMessage(session, session.lastAssistantMessageId, (message) => ({
+    ...message,
+    finishedAt: Date.now(),
+    status: { type: "incomplete", error },
+  }));
+};
+
 /** Applies one connection, session, message, tool, or permission event. */
-export function reduceAcpThreadState(state: AcpThreadState, event: AcpStateEvent): AcpThreadState {
+export function reduceAcpThreadState(
+  state: AcpThreadState,
+  event: AcpStateEvent,
+  extensions?: AcpRuntimeExtensionAdapter,
+): AcpThreadState {
   switch (event.type) {
     case "connection.status":
       return {
@@ -349,6 +408,14 @@ export function reduceAcpThreadState(state: AcpThreadState, event: AcpStateEvent
       };
     case "session.selected":
       return { ...state, activeSessionId: event.sessionId };
+    case "session.compacted":
+      return updateSession(state, event.sessionId, (session) => ({
+        ...createAcpSessionState(event.sessionId),
+        ...(session.info ? { info: session.info } : {}),
+        access: session.access,
+        ...(session.modes !== undefined ? { modes: session.modes } : {}),
+        configOptions: session.configOptions,
+      }));
     case "session.deleted": {
       const sessions = { ...state.sessions };
       delete sessions[event.sessionId];
@@ -407,7 +474,7 @@ export function reduceAcpThreadState(state: AcpThreadState, event: AcpStateEvent
       }));
     case "session.turn_failed":
       return updateSession(state, event.sessionId, (session) => ({
-        ...session,
+        ...failAssistantMessage(session, event.error),
         runState: "idle",
         error: event.error,
       }));
@@ -418,7 +485,7 @@ export function reduceAcpThreadState(state: AcpThreadState, event: AcpStateEvent
       }));
     case "session.update":
       return updateSession(state, event.notification.sessionId, (session) =>
-        reduceNotification(session, event.notification),
+        reduceNotification(session, event.notification, extensions),
       );
     case "message.optimistic":
       return updateSession(state, event.sessionId, (session) =>

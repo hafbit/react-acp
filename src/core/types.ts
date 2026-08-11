@@ -216,6 +216,22 @@ export type AcpMessagePiece =
     }
   | { type: "unsupported"; notification: SessionNotification };
 
+/** Completion state retained for one projected ACP message. */
+export type AcpMessageStatus =
+  | { type: "running" }
+  | { type: "complete"; stopReason: StopReason }
+  | { type: "incomplete"; stopReason?: StopReason; error?: unknown };
+
+/** Optional authoritative lifecycle fields supplied by an application extension. */
+export type AcpMessageStatePatch = {
+  /** Unix milliseconds when the user message was sent. */
+  sentAt?: number;
+  /** Unix milliseconds when the assistant message finished. */
+  finishedAt?: number;
+  /** Authoritative completion state, when recoverable from agent history. */
+  status?: AcpMessageStatus;
+};
+
 /** Protocol-authoritative message record retained in ACP session state. */
 export type AcpMessageRecord = {
   /** Stable ACP message ID, or a locally generated ID when the agent omits one. */
@@ -226,15 +242,16 @@ export type AcpMessageRecord = {
   protocolMessageId?: string;
   /** Local creation time in Unix milliseconds. */
   createdAt: number;
+  /** Authoritative user send time in Unix milliseconds, when known. */
+  sentAt?: number;
+  /** Authoritative assistant finish time in Unix milliseconds, when known. */
+  finishedAt?: number;
   /** Ordered raw content, tool, plan, and unsupported protocol pieces. */
   pieces: readonly AcpMessagePiece[];
   /** Complete ACP notifications owned directly by this message. */
   rawNotifications: readonly SessionNotification[];
   /** Assistant turn completion state. */
-  status?:
-    | { type: "running" }
-    | { type: "complete"; stopReason: StopReason }
-    | { type: "incomplete"; stopReason?: StopReason; error?: unknown };
+  status?: AcpMessageStatus;
   /** Whether this local user message is awaiting authoritative ACP updates. */
   optimistic?: boolean;
   /** Serialization, transport, or turn failure associated with the message. */
@@ -287,6 +304,8 @@ export type AcpRuntimeExtensionAdapter = {
   sessionAccess?(context: AcpSessionAccessContext): AcpSessionAccess | undefined;
   /** Returns an application-defined grouping phase for one raw session notification. */
   messagePhase?(notification: SessionNotification): string | undefined;
+  /** Recovers authoritative message lifecycle fields from opaque notification metadata. */
+  messageState?(notification: SessionNotification): AcpMessageStatePatch | undefined;
 };
 
 /** Protocol-authoritative state retained for one ACP session. */
@@ -371,6 +390,7 @@ export type AcpStateEvent =
   | { type: "session.committed"; sessionId: string }
   | { type: "session.prepared_cleared"; sessionId: string }
   | { type: "session.selected"; sessionId: string | undefined }
+  | { type: "session.compacted"; sessionId: string }
   | { type: "session.deleted"; sessionId: string }
   | { type: "session.loading"; sessionId: string; clearHistory: boolean }
   | { type: "session.restored"; session: AcpSessionState; error?: unknown }

@@ -12,9 +12,10 @@ import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "reac
 import { acpExtras } from "./acp-extras";
 import {
   AcpCapabilityError,
+  AcpProjectionCache,
   AcpThreadController,
   hasAgentCapability,
-  projectAcpThreadRepository,
+  projectAcpSessionRepository,
   type AcpRuntimeExtras,
   type AcpRuntimeOptions,
 } from "./core";
@@ -112,9 +113,13 @@ export function useAcpRuntime(options: AcpRuntimeOptions): AssistantRuntime {
     [controller, session, state],
   );
 
+  const projectionCache = useMemo(
+    () => new AcpProjectionCache(),
+    [options.extensions, session?.sessionId],
+  );
   const messageRepository = useMemo(
-    () => projectAcpThreadRepository(state, state.activeSessionId, options.extensions),
-    [options.extensions, state],
+    () => projectAcpSessionRepository(session, options.extensions, projectionCache),
+    [options.extensions, projectionCache, session],
   );
 
   const threadList = useMemo(

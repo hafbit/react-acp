@@ -12,13 +12,7 @@ import type {
 } from "./types";
 
 type ProjectedPart = Exclude<AcpProjectedMessage["content"], string>[number];
-type ProjectedTextPart = Extract<ProjectedPart, { type: "text" | "reasoning" }>;
-
-type AcpPartMetadata = {
-  phase: string | null;
-  rawPieceIndices: number[];
-  rawPieceRefs: Array<{ messageId: string; pieceIndex: number }>;
-};
+type ProjectionExtensions = Pick<AcpRuntimeExtensionAdapter, "messagePhase"> | undefined;
 
 const dataPart = (name: string, data: unknown): ProjectedPart => ({
   type: "data",
@@ -28,41 +22,12 @@ const dataPart = (name: string, data: unknown): ProjectedPart => ({
 
 const toDataUrl = (mimeType: string, data: string) => `data:${mimeType};base64,${data}`;
 
-const objectRecord = (value: unknown): Record<string, unknown> | undefined =>
-  value && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : undefined;
-
 const piecePhase = (
   piece: AcpMessagePiece,
-  extensions: Pick<AcpRuntimeExtensionAdapter, "messagePhase"> | undefined,
+  extensions: ProjectionExtensions,
 ): string | undefined => {
   if (piece.type !== "content") return undefined;
   return piece.notification ? extensions?.messagePhase?.(piece.notification) : undefined;
-};
-
-const acpPartMetadata = (part: ProjectedTextPart): AcpPartMetadata | undefined => {
-  const metadata = objectRecord(part.providerMetadata?.acp);
-  const rawPieceIndices = metadata?.rawPieceIndices;
-  const rawPieceRefs = metadata?.rawPieceRefs;
-  if (!Array.isArray(rawPieceIndices) || !rawPieceIndices.every(Number.isInteger)) return undefined;
-  if (
-    !Array.isArray(rawPieceRefs) ||
-    !rawPieceRefs.every(
-      (reference) =>
-        typeof objectRecord(reference)?.messageId === "string" &&
-        Number.isInteger(objectRecord(reference)?.pieceIndex),
-    )
-  ) {
-    return undefined;
-  }
-  const phase = metadata?.phase;
-  if (phase !== null && typeof phase !== "string") return undefined;
-  return {
-    phase,
-    rawPieceIndices: rawPieceIndices as number[],
-    rawPieceRefs: rawPieceRefs as Array<{ messageId: string; pieceIndex: number }>,
-  };
 };
 
 function projectContent(content: ContentBlock, reasoning: boolean): ProjectedPart {
@@ -242,9 +207,34 @@ const projectPiece = (
 const projectMessagePieces = (
   session: AcpSessionState,
   messages: readonly AcpMessageRecord[],
-  extensions: Pick<AcpRuntimeExtensionAdapter, "messagePhase"> | undefined,
+  extensions: ProjectionExtensions,
 ): ProjectedPart[] => {
   const projected: ProjectedPart[] = [];
+  let pending:
+    | {
+        type: "text" | "reasoning";
+        phase: string | null;
+        text: string[];
+        rawPieceIndices: number[];
+        rawPieceRefs: Array<{ messageId: string; pieceIndex: number }>;
+      }
+    | undefined;
+  const flushPending = () => {
+    if (!pending) return;
+    projected.push({
+      type: pending.type,
+      text: pending.text.join(""),
+      providerMetadata: {
+        acp: {
+          phase: pending.phase,
+          rawPieceIndices: pending.rawPieceIndices,
+          rawPieceRefs: pending.rawPieceRefs,
+        },
+      },
+    });
+    pending = undefined;
+  };
+
   for (const message of messages) {
     let activeType: "text" | "reasoning" | undefined;
     let activePhase: string | undefined;
@@ -266,38 +256,30 @@ const projectMessagePieces = (
         activePhase = piecePhase(piece, extensions) ?? activePhase;
       }
 
+      if (message.role === "assistant" && type && content?.type === "text") {
+        const phase = activePhase ?? null;
+        if (!pending || pending.type !== type || pending.phase !== phase) {
+          flushPending();
+          pending = {
+            type,
+            phase,
+            text: [],
+            rawPieceIndices: [],
+            rawPieceRefs: [],
+          };
+        }
+        pending.text.push(content.text);
+        pending.rawPieceIndices.push(rawPieceIndex);
+        pending.rawPieceRefs.push({ messageId: message.id, pieceIndex: rawPieceIndex });
+        continue;
+      }
+
+      flushPending();
       const next = projectPiece(session, message.id, piece, rawPieceIndex, activePhase);
-      const previous = projected.at(-1);
-      const canMerge =
-        message.role === "assistant" &&
-        (next.type === "text" || next.type === "reasoning") &&
-        previous?.type === next.type;
-      if (!canMerge) {
-        projected.push(next);
-        continue;
-      }
-
-      const previousMetadata = acpPartMetadata(previous);
-      const nextMetadata = acpPartMetadata(next);
-      if (!previousMetadata || !nextMetadata || previousMetadata.phase !== nextMetadata.phase) {
-        projected.push(next);
-        continue;
-      }
-
-      projected[projected.length - 1] = {
-        ...previous,
-        text: previous.text + next.text,
-        providerMetadata: {
-          ...previous.providerMetadata,
-          acp: {
-            phase: nextMetadata.phase,
-            rawPieceIndices: [...previousMetadata.rawPieceIndices, ...nextMetadata.rawPieceIndices],
-            rawPieceRefs: [...previousMetadata.rawPieceRefs, ...nextMetadata.rawPieceRefs],
-          },
-        },
-      };
+      projected.push(next);
     }
   }
+  flushPending();
   return projected;
 };
 
@@ -325,7 +307,7 @@ const statusForMessage = (message: AcpMessageRecord) => {
 const projectMessage = (
   session: AcpSessionState,
   messages: readonly [AcpMessageRecord, ...AcpMessageRecord[]],
-  extensions: Pick<AcpRuntimeExtensionAdapter, "messagePhase"> | undefined,
+  extensions: ProjectionExtensions,
 ): AcpProjectedMessage => {
   const message = messages[0];
   const latest = messages.at(-1) ?? message;
@@ -370,21 +352,82 @@ const projectMessage = (
   };
 };
 
-/** Projects one ACP session into assistant-ui thread messages. */
-export function projectAcpThreadMessages(
-  state: AcpThreadState,
-  sessionId = state.activeSessionId,
-  extensions?: Pick<AcpRuntimeExtensionAdapter, "messagePhase">,
+type ProjectionCacheEntry = {
+  messages: readonly AcpMessageRecord[];
+  tools: readonly (AcpToolCallRecord | undefined)[];
+  projected: AcpProjectedMessage;
+};
+
+const sameReferences = <T>(left: readonly T[], right: readonly T[]): boolean =>
+  left.length === right.length && left.every((value, index) => value === right[index]);
+
+const referencedTools = (
+  session: AcpSessionState,
+  messages: readonly AcpMessageRecord[],
+): Array<AcpToolCallRecord | undefined> =>
+  messages.flatMap((message) =>
+    message.pieces.flatMap((piece) =>
+      piece.type === "tool" ? [session.tools[piece.toolCallId]] : [],
+    ),
+  );
+
+/** Reuses projections for unchanged message groups within one active session. */
+export class AcpProjectionCache {
+  private entries = new Map<string, ProjectionCacheEntry>();
+  private extensions: ProjectionExtensions = undefined;
+
+  begin(extensions: ProjectionExtensions): void {
+    if (this.extensions === extensions) return;
+    this.entries.clear();
+    this.extensions = extensions;
+  }
+
+  project(
+    session: AcpSessionState,
+    messages: readonly [AcpMessageRecord, ...AcpMessageRecord[]],
+    extensions: ProjectionExtensions,
+  ): AcpProjectedMessage {
+    const key = messages[0].id;
+    const tools = referencedTools(session, messages);
+    const cached = this.entries.get(key);
+    if (
+      cached &&
+      sameReferences(cached.messages, messages) &&
+      sameReferences(cached.tools, tools)
+    ) {
+      return cached.projected;
+    }
+    const projected = projectMessage(session, messages, extensions);
+    this.entries.set(key, { messages: [...messages], tools, projected });
+    return projected;
+  }
+
+  retain(keys: ReadonlySet<string>): void {
+    for (const key of this.entries.keys()) {
+      if (!keys.has(key)) this.entries.delete(key);
+    }
+  }
+}
+
+/** Projects one already-resolved ACP session into assistant-ui messages. */
+export function projectAcpSessionMessages(
+  session: AcpSessionState | undefined,
+  extensions?: ProjectionExtensions,
+  cache?: AcpProjectionCache,
 ): AcpProjectedMessage[] {
-  if (!sessionId) return [];
-  const session = state.sessions[sessionId];
   if (!session) return [];
+  cache?.begin(extensions);
   const projected: AcpProjectedMessage[] = [];
+  const retainedKeys = new Set<string>();
   for (let index = 0; index < session.messages.length;) {
     const message = session.messages[index];
     if (!message) break;
     if (message.role === "user") {
-      projected.push(projectMessage(session, [message], extensions));
+      retainedKeys.add(message.id);
+      projected.push(
+        cache?.project(session, [message], extensions) ??
+          projectMessage(session, [message], extensions),
+      );
       index += 1;
       continue;
     }
@@ -395,10 +438,34 @@ export function projectAcpThreadMessages(
       assistantMessages.push(session.messages[nextIndex] as AcpMessageRecord);
       nextIndex += 1;
     }
-    projected.push(projectMessage(session, assistantMessages, extensions));
+    retainedKeys.add(message.id);
+    projected.push(
+      cache?.project(session, assistantMessages, extensions) ??
+        projectMessage(session, assistantMessages, extensions),
+    );
     index = nextIndex;
   }
+  cache?.retain(retainedKeys);
   return projected;
+}
+
+/** Projects one already-resolved ACP session into an exported repository. */
+export function projectAcpSessionRepository(
+  session: AcpSessionState | undefined,
+  extensions?: ProjectionExtensions,
+  cache?: AcpProjectionCache,
+): ExportedMessageRepository {
+  return ExportedMessageRepository.fromArray(projectAcpSessionMessages(session, extensions, cache));
+}
+
+/** Projects one ACP session into assistant-ui thread messages. */
+export function projectAcpThreadMessages(
+  state: AcpThreadState,
+  sessionId = state.activeSessionId,
+  extensions?: Pick<AcpRuntimeExtensionAdapter, "messagePhase">,
+): AcpProjectedMessage[] {
+  if (!sessionId) return [];
+  return projectAcpSessionMessages(state.sessions[sessionId], extensions);
 }
 
 /** Projects all ACP sessions into an assistant-ui exported message repository. */
@@ -407,7 +474,6 @@ export function projectAcpThreadRepository(
   sessionId = state.activeSessionId,
   extensions?: Pick<AcpRuntimeExtensionAdapter, "messagePhase">,
 ): ExportedMessageRepository {
-  return ExportedMessageRepository.fromArray(
-    projectAcpThreadMessages(state, sessionId, extensions),
-  );
+  if (!sessionId) return ExportedMessageRepository.fromArray([]);
+  return projectAcpSessionRepository(state.sessions[sessionId], extensions);
 }

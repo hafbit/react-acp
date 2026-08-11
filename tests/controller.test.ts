@@ -422,7 +422,7 @@ describe("AcpThreadController conformance fixture", () => {
     });
   });
 
-  it("快速切换只允许最新 session 生效，同时保留较晚完成的历史", async () => {
+  it("快速切换只允许最新 session 生效，并压缩较晚完成的非活动历史", async () => {
     const adapter = new ConformanceAdapter();
     const loads = new Map<string, ReturnType<typeof deferred<void>>>();
     adapter.connection.loadSession = vi.fn(async ({ sessionId }: { sessionId: string }) => {
@@ -453,7 +453,8 @@ describe("AcpThreadController conformance fixture", () => {
     await selectA;
 
     expect(controller.getState().activeSessionId).toBe("s2");
-    expect(controller.getState().sessions.s1?.messages[0]?.id).toBe("history-s1");
+    expect(controller.getState().sessions.s1?.messages).toEqual([]);
+    expect(controller.getState().sessions.s1?.info?.title).toBe("One");
     expect(controller.getState().sessions.s2?.messages[0]?.id).toBe("history-s2");
   });
 

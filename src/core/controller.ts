@@ -151,8 +151,51 @@ export class AcpThreadController {
   };
 
   private dispatch(event: AcpStateEvent): void {
-    this.state = reduceAcpThreadState(this.state, event);
+    this.state = reduceAcpThreadState(this.state, event, this.options.extensions);
     for (const listener of this.listeners) listener();
+  }
+
+  private sessionHasResidentState(sessionId: string): boolean {
+    const session = this.state.sessions[sessionId];
+    if (!session) return false;
+    return (
+      session.messages.length > 0 ||
+      Object.keys(session.tools).length > 0 ||
+      Object.keys(session.permissions).length > 0 ||
+      session.plan !== undefined ||
+      session.commands.length > 0 ||
+      session.usage !== undefined ||
+      session.turn > 0 ||
+      session.lastChunk !== undefined ||
+      session.lastAssistantMessageId !== undefined ||
+      Object.keys(session.latestNotifications).length > 0 ||
+      session.unhandledNotifications.length > 0 ||
+      session.error !== undefined
+    );
+  }
+
+  private compactInactiveSessions(): void {
+    const activeSessionId = this.state.activeSessionId;
+    for (const [sessionId, session] of Object.entries(this.state.sessions)) {
+      if (
+        sessionId === activeSessionId ||
+        sessionId === this.state.preparedSessionId ||
+        session.runState === "loading" ||
+        session.runState === "running" ||
+        session.runState === "cancelling" ||
+        this.loadingSessions.has(sessionId) ||
+        this.attachmentPromises.has(sessionId) ||
+        this.pendingOutbound.has(sessionId) ||
+        Object.values(session.permissions).some((permission) => permission.status === "pending")
+      ) {
+        continue;
+      }
+      if (!this.attachedSessions.has(sessionId) && !this.sessionHasResidentState(sessionId)) {
+        continue;
+      }
+      this.attachedSessions.delete(sessionId);
+      this.dispatch({ type: "session.compacted", sessionId });
+    }
   }
 
   private reportError(error: unknown): void {
@@ -338,6 +381,7 @@ export class AcpThreadController {
     try {
       await this.attachSession(activeSessionId, { force: true });
       this.settledActiveSessionId = activeSessionId;
+      this.compactInactiveSessions();
     } catch (error) {
       if (this.state.preparedSessionId === activeSessionId) {
         this.discardPreparedSession(activeSessionId);
@@ -361,6 +405,7 @@ export class AcpThreadController {
       cursor = response.nextCursor ?? undefined;
     } while (cursor);
     this.dispatch({ type: "sessions.listed", sessions });
+    this.compactInactiveSessions();
   }
 
   /** Creates, attaches, and selects a new ACP session. */
@@ -388,6 +433,7 @@ export class AcpThreadController {
       this.settledActiveSessionId = response.sessionId;
       this.options.onThreadIdChange?.(response.sessionId);
     }
+    this.compactInactiveSessions();
     return response.sessionId;
   }
 
@@ -480,11 +526,16 @@ export class AcpThreadController {
       if (token === this.selectionGeneration) {
         this.dispatch({ type: "session.selected", sessionId: fallbackSessionId });
       }
+      this.compactInactiveSessions();
       throw error;
     }
-    if (token !== this.selectionGeneration) return;
+    if (token !== this.selectionGeneration) {
+      this.compactInactiveSessions();
+      return;
+    }
     this.dispatch({ type: "session.selected", sessionId });
     this.settledActiveSessionId = sessionId;
+    this.compactInactiveSessions();
     if (notify) this.options.onThreadIdChange?.(sessionId);
   }
 
@@ -533,7 +584,7 @@ export class AcpThreadController {
     }
 
     this.dispatch({ type: "session.loading", sessionId, clearHistory: !useResume });
-    if (!useResume) this.loadingSessions.add(sessionId);
+    this.loadingSessions.add(sessionId);
     try {
       const response = await this.runAgentRequest(() =>
         useResume
@@ -626,9 +677,11 @@ export class AcpThreadController {
         this.requireConnection().prompt({ sessionId, prompt }),
       );
       this.dispatch({ type: "session.prompt_stopped", sessionId, response });
+      this.compactInactiveSessions();
       return response;
     } catch (error) {
       this.dispatch({ type: "session.turn_failed", sessionId, error });
+      this.compactInactiveSessions();
       this.reportError(error);
       throw error;
     }
@@ -640,14 +693,16 @@ export class AcpThreadController {
     this.assertSessionWritable(sessionId);
     const prompt = serializeAppendMessage(message, this.state.capabilities);
     this.commitPreparedSession(sessionId);
-    const messageId = `local:${sessionId}:${Date.now()}:${Math.random().toString(36).slice(2)}`;
+    const sentAt = Date.now();
+    const messageId = `local:${sessionId}:${sentAt}:${Math.random().toString(36).slice(2)}`;
     this.dispatch({
       type: "message.optimistic",
       sessionId,
       message: {
         id: messageId,
         role: "user",
-        createdAt: Date.now(),
+        createdAt: sentAt,
+        sentAt,
         optimistic: true,
         pieces: prompt.map((content) => ({ type: "content" as const, content })),
         rawNotifications: [],
@@ -673,6 +728,14 @@ export class AcpThreadController {
   private handleSessionUpdate(generation: number, notification: SessionNotification): void {
     if (generation !== this.connectionGeneration) return;
     const sessionId = notification.sessionId;
+    if (
+      !this.attachedSessions.has(sessionId) &&
+      !this.loadingSessions.has(sessionId) &&
+      !this.attachmentPromises.has(sessionId) &&
+      !this.pendingOutbound.has(sessionId)
+    ) {
+      return;
+    }
     const update = notification.update;
     const pending = this.pendingOutbound.get(sessionId);
 
@@ -744,6 +807,7 @@ export class AcpThreadController {
       });
     }
     this.pendingOutbound.delete(sessionId);
+    this.compactInactiveSessions();
   }
 
   /** Cancels pending permissions and the active prompt turn for a session. */
@@ -825,6 +889,7 @@ export class AcpThreadController {
           toolCallId: request.toolCall.toolCallId,
           response,
         });
+        this.compactInactiveSessions();
         signal.removeEventListener("abort", abort);
         resolve(response);
       };
@@ -854,6 +919,7 @@ export class AcpThreadController {
     this.permissionWaiters.delete(key);
     this.dispatch({ type: "permission.resolved", sessionId, toolCallId, response });
     waiter.resolve(response);
+    this.compactInactiveSessions();
   }
 
   /** Permanently disposes the controller and rejects pending permission requests. */
